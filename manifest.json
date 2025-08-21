@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Linkshelf",
+  "version": "1.0.0",
+  "description": "A beautiful, visual bookmark dashboard that replaces your new tab page with organized categories and drag-and-drop functionality.",
+  
+  "chrome_url_overrides": {
+    "newtab": "dashboard.html"
+  },
+  
+  "permissions": [
+    "storage",
+    "favicon"
+  ],
+  
+  "host_permissions": [
+    "http://*/",
+    "https://*/"
+  ],
+  
+  "icons": {
+    "16": "icons/icon16.svg",
+    "32": "icons/icon32.svg",
+    "48": "icons/icon48.svg",
+    "128": "icons/icon128.svg"
+  },
+  
+  "action": {
+    "default_popup": "dashboard.html"
+  }
+}
