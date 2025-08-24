@@ -10,7 +10,8 @@
   
   "permissions": [
     "storage",
-    "favicon"
+    "favicon",
+    "contextMenus"
   ],
   
   "host_permissions": [
@@ -26,6 +27,10 @@
   },
   
   "action": {
-    "default_popup": "dashboard.html"
+    "default_title": "Open LinkShelf Dashboard"
+  },
+
+  "background": {
+    "service_worker": "background.js"
   }
 }

@@ -2,16 +2,19 @@
 class LinkShelfDashboard {
     constructor() {
         this.categories = [];
-        this.currentEditingBookmark = null;
-        this.currentEditingCategory = null;
-        this.draggedElement = null;
-        this.draggedType = null; // 'bookmark' or 'category'
-        this.urlFetchTimeout = null; // For debouncing URL fetching
+        this.favourites = [];
+        this.columnCount = 3;
+        this.showFavourites = true;
+        this.favouritesEditMode = false;
+        this.openLinksInNewTab = true; // Default to opening in new tab
         this.categoryModalMode = 'create'; // 'create' or 'edit'
         this.editingCategoryIndex = null;
-        this.columnCount = 4; // Default column count
-        
-        this.init();
+        this.currentEditingBookmark = null;
+        this.currentEditingCategory = null;
+        this.currentEditingFavourite = null;
+        this.editingFavouriteIndex = null;
+        this.draggedElement = null;
+        this.draggedType = null;
     }
 
     // Initialize the dashboard
@@ -24,49 +27,83 @@ class LinkShelfDashboard {
     // Data Management
     async loadData() {
         try {
-            const result = await chrome.storage.local.get(['linkshelf_categories', 'linkshelf_column_count']);
-            this.categories = result.linkshelf_categories || [];
-            this.columnCount = result.linkshelf_column_count || 4;
+            const result = await chrome.storage.local.get([
+                'linkshelf_categories', 
+                'linkshelf_column_count',
+                'linkshelf_favourites',
+                'linkshelf_show_favourites',
+                'linkshelf_open_links_new_tab'
+            ]);
             
-            // Migrate existing categories to include column/position data if missing
-            this.migrateCategoryData();
-        } catch (error) {
-            console.error('Error loading data:', error);
-            this.categories = [];
-            this.columnCount = 4;
-        }
-    }
-
-    migrateCategoryData() {
-        let needsSave = false;
-        this.categories.forEach((category, index) => {
+            this.categories = result.linkshelf_categories || [];
+            this.columnCount = result.linkshelf_column_count || 3;
+            this.favourites = result.linkshelf_favourites || [];
+            this.showFavourites = result.linkshelf_show_favourites !== false; // Default to true
+            this.openLinksInNewTab = result.linkshelf_open_links_new_tab !== false; // Default to true
+            
+            let needsSave = false;
+            
+            // Migration and validation logic for categories
+            this.categories.forEach((category, index) => {
+                // Ensure each category has required properties
+                if (!category.id) {
+                    category.id = this.generateId();
+                    needsSave = true;
+                }
+                
+                // Position categories if they don't have column/position data
             if (category.column === undefined || category.position === undefined) {
-                // Distribute existing categories across columns
-                category.column = index % this.columnCount;
-                category.position = Math.floor(index / this.columnCount);
+                    const slot = this.findFirstAvailableSlot();
+                category.column = slot.column;
+                category.position = slot.position;
                 needsSave = true;
+            }
+            
+                // Migrate bookmarks from subsections back to category (removing subsections)
+                if (category.subsections && category.subsections.length > 0) {
+                    // Move all bookmarks from all subsections to the main category bookmarks array
+                    category.subsections.forEach(subsection => {
+                        if (subsection.bookmarks && subsection.bookmarks.length > 0) {
+                            category.bookmarks = category.bookmarks || [];
+                            category.bookmarks.push(...subsection.bookmarks);
+                        }
+                    });
+                    // Remove the subsections data structure
+                    delete category.subsections;
+                    needsSave = true;
+                }
+                
+                // Initialize empty bookmarks array if it doesn't exist
+                if (!category.bookmarks) {
+                    category.bookmarks = [];
+                    needsSave = true;
             }
         });
         
         if (needsSave) {
             this.saveData();
         }
-    }
-
-    findFirstAvailableSlot() {
-        return this.findFirstAvailableSlotInRange(0, this.columnCount - 1);
+        } catch (error) {
+            console.error('Error loading data:', error);
+        }
     }
 
     async saveData() {
         try {
             await chrome.storage.local.set({ 
-                linkshelf_categories: this.categories,
-                linkshelf_column_count: this.columnCount
+                'linkshelf_categories': this.categories,
+                'linkshelf_column_count': this.columnCount,
+                'linkshelf_favourites': this.favourites,
+                'linkshelf_show_favourites': this.showFavourites,
+                'linkshelf_open_links_new_tab': this.openLinksInNewTab
             });
         } catch (error) {
             console.error('Error saving data:', error);
-            this.showToast('Error saving data', 'error');
         }
+    }
+
+    generateId() {
+        return 'id_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
     }
 
     // Event Listeners
@@ -92,6 +129,16 @@ class LinkShelfDashboard {
         document.getElementById('import-bookmarks').addEventListener('click', () => this.triggerImport());
         document.getElementById('import-file').addEventListener('change', (e) => this.importBookmarks(e));
         document.getElementById('column-count').addEventListener('change', (e) => this.handleColumnCountChange(e));
+        document.getElementById('show-favourites').addEventListener('change', (e) => this.handleShowFavouritesChange(e));
+        document.getElementById('open-links-new-tab').addEventListener('change', (e) => this.handleOpenLinksInNewTabChange(e));
+
+        // Favourite modal
+        document.getElementById('favourite-form').addEventListener('submit', (e) => this.handleSaveFavourite(e));
+        document.getElementById('cancel-favourite').addEventListener('click', () => this.closeModal('favourite-modal'));
+        document.getElementById('favourite-url').addEventListener('input', (e) => this.handleFavouriteUrlInputDebounced(e));
+        document.getElementById('favourite-url').addEventListener('blur', (e) => this.handleFavouriteUrlInputImmediate(e));
+        document.getElementById('favourite-favicon').addEventListener('input', (e) => this.handleFavouriteFaviconUrlInput(e));
+        document.getElementById('favourite-favicon').addEventListener('blur', (e) => this.handleFavouriteFaviconUrlInput(e));
 
         // Confirmation modal
         document.getElementById('confirmation-cancel').addEventListener('click', () => this.closeModal('confirmation-modal'));
@@ -111,16 +158,61 @@ class LinkShelfDashboard {
             });
         });
 
-        // Escape key to close modals
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeAllModals();
-            }
+        // Global click handler to close dropdowns
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.category-actions')) {
+                    this.closeCategoryDropdowns();
+                }
+        });
+    }
+
+    attachDynamicEventListeners() {
+        // This method attaches event listeners to dynamically generated elements
+        // It gets called after each render to ensure all elements have proper listeners
+        
+        // Bookmark drag and drop
+        document.querySelectorAll('.bookmark-item').forEach(item => {
+            item.addEventListener('dragstart', (e) => this.handleBookmarkDragStart(e));
+            item.addEventListener('dragend', (e) => this.handleBookmarkDragEnd(e));
+        });
+
+        // Bookmark action buttons
+        document.querySelectorAll('.bookmark-edit-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
+                const bookmarkIndex = parseInt(e.target.dataset.bookmarkIndex);
+                this.editBookmark(categoryIndex, bookmarkIndex);
+            });
+        });
+
+        document.querySelectorAll('.bookmark-delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
+                const bookmarkIndex = parseInt(e.target.dataset.bookmarkIndex);
+                this.deleteBookmark(categoryIndex, bookmarkIndex);
+            });
+        });
+
+        // Favicon error handling for bookmarks
+        document.querySelectorAll('.bookmark-favicon').forEach(img => {
+            img.addEventListener('error', (e) => {
+                const fallbackIcon = e.target.dataset.fallback;
+                if (fallbackIcon && e.target.src !== fallbackIcon) {
+                    e.target.src = fallbackIcon;
+                }
+            });
         });
     }
 
     // UI Rendering
     renderDashboard() {
+        // Render favourites bar
+        this.renderFavouritesBar();
+        
         const container = document.getElementById('categories-container');
         
         // Update container class for column count
@@ -156,91 +248,8 @@ class LinkShelfDashboard {
 
         this.setupCategoryEventListeners();
         this.setupColumnDropZones();
-    }
-
-    setupColumnDropZones() {
-        // Setup drop zones for category positioning within columns
-        document.querySelectorAll('.column-drop-zone').forEach(dropZone => {
-            dropZone.addEventListener('dragover', (e) => this.handleColumnDropZoneDragOver(e));
-            dropZone.addEventListener('dragleave', (e) => this.handleColumnDropZoneDragLeave(e));
-            dropZone.addEventListener('drop', (e) => this.handleColumnDropZoneDrop(e));
-        });
-        
-        // Setup grid columns for drag events
-        document.querySelectorAll('.grid-column').forEach(column => {
-            column.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-            });
-        });
-    }
-
-    handleColumnDropZoneDragOver(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'move';
-        
-        if (this.draggedType === 'category') {
-            e.target.classList.add('drag-over');
-        }
-    }
-
-    handleColumnDropZoneDragLeave(e) {
-        // Only remove drag-over if we're actually leaving the drop zone
-        if (!e.target.contains(e.relatedTarget)) {
-            e.target.classList.remove('drag-over');
-        }
-    }
-
-    handleColumnDropZoneDrop(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        e.target.classList.remove('drag-over');
-        
-        if (this.draggedType === 'category' && this.draggedElement) {
-            const targetColumn = parseInt(e.target.dataset.columnIndex);
-            const targetPosition = parseInt(e.target.dataset.position);
-            const draggedCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
-            
-            console.log(`Moving category ${draggedCategoryIndex} to column ${targetColumn}, position ${targetPosition}`);
-            this.moveCategoryToSlot(draggedCategoryIndex, targetColumn, targetPosition);
-        }
-    }
-
-    async moveCategoryToSlot(categoryIndex, targetColumn, targetPosition) {
-        const category = this.categories[categoryIndex];
-        const oldColumn = category.column;
-        const oldPosition = category.position;
-        
-        // Update the category's position
-        category.column = targetColumn;
-        category.position = targetPosition;
-        
-        // Shift other categories in target column down
-        this.categories.forEach((cat, index) => {
-            if (index !== categoryIndex && cat.column === targetColumn && cat.position >= targetPosition) {
-                cat.position += 1;
-            }
-        });
-        
-        // Shift categories in old column up to fill the gap
-        this.categories.forEach((cat, index) => {
-            if (index !== categoryIndex && cat.column === oldColumn && cat.position > oldPosition) {
-                cat.position -= 1;
-            }
-        });
-        
-        await this.saveData();
-        this.renderDashboard();
-        this.showToast('Category moved successfully', 'success');
-    }
-    
-    setupEmptyStateEventListeners() {
-        // Empty state create category button
-        const emptyCreateBtn = document.getElementById('empty-create-category-btn');
-        if (emptyCreateBtn) {
-            emptyCreateBtn.addEventListener('click', () => this.openCreateCategoryModal());
-        }
+        this.setupBookmarkDragDrop();
+        this.attachDynamicEventListeners();
     }
 
     renderEmptyState() {
@@ -271,28 +280,38 @@ class LinkShelfDashboard {
     }
 
     renderCategory(category, categoryIndex) {
+        let bodyContent = '';
+        
+        // Render category bookmarks
+        if (category.bookmarks && category.bookmarks.length > 0) {
+            bodyContent += `
+                <ul class="bookmarks-list" data-category-index="${categoryIndex}">
+                    ${category.bookmarks.map((bookmark, bookmarkIndex) => 
+                        this.renderBookmark(bookmark, categoryIndex, bookmarkIndex)
+                    ).join('')}
+                </ul>
+            `;
+        }
+        
         return `
             <div class="category-column" data-category-index="${categoryIndex}" draggable="true">
                 <div class="category-header">
                     <h3 class="category-title">${this.escapeHtml(category.name)}</h3>
+                    <button class="add-bookmark-plus-btn" data-category-index="${categoryIndex}" title="Add Link to Category">
+                        +
+                    </button>
                     <div class="category-actions">
-                        <button class="category-action-btn category-edit-btn" data-category-index="${categoryIndex}" title="Edit Category">
-                            ✏️
+                        <button class="category-menu-btn" data-category-index="${categoryIndex}" title="Category Actions">
+                            ⋯
                         </button>
-                        <button class="category-action-btn category-delete-btn" data-category-index="${categoryIndex}" title="Delete Category">
-                            🗑️
-                        </button>
+                        <div class="category-dropdown-menu" data-category-index="${categoryIndex}">
+                            <button class="dropdown-item category-edit-btn" data-category-index="${categoryIndex}">Edit Category</button>
+                            <button class="dropdown-item category-delete-btn" data-category-index="${categoryIndex}">Delete Category</button>
+                        </div>
                     </div>
                 </div>
                 <div class="category-body">
-                    <ul class="bookmarks-list">
-                        ${category.bookmarks.map((bookmark, bookmarkIndex) => 
-                            this.renderBookmark(bookmark, categoryIndex, bookmarkIndex)
-                        ).join('')}
-                    </ul>
-                    <button class="add-bookmark-btn" data-category-index="${categoryIndex}">
-                        + Add Link
-                    </button>
+                    ${bodyContent}
                 </div>
             </div>
         `;
@@ -304,8 +323,8 @@ class LinkShelfDashboard {
         
         return `
             <li class="bookmark-item" data-category-index="${categoryIndex}" data-bookmark-index="${bookmarkIndex}" draggable="true">
-                <a href="${this.escapeHtml(bookmark.url)}" target="_blank" class="bookmark-link">
-                    <img class="bookmark-favicon" src="${faviconSrc}" alt="Favicon" onerror="this.src='${fallbackIcon}'">
+                <a href="${this.escapeHtml(bookmark.url)}" ${this.openLinksInNewTab ? 'target="_blank"' : ''} class="bookmark-link">
+                    <img class="bookmark-favicon" src="${faviconSrc}" alt="Favicon" data-fallback="${fallbackIcon}">
                     <span class="bookmark-title">${this.escapeHtml(bookmark.name)}</span>
                 </a>
                 <div class="bookmark-actions">
@@ -320,76 +339,15 @@ class LinkShelfDashboard {
         `;
     }
 
-    setupCategoryEventListeners() {
-        // Category drag start/end only
-        document.querySelectorAll('.category-column').forEach(column => {
-            column.addEventListener('dragstart', (e) => this.handleCategoryDragStart(e));
-            column.addEventListener('dragend', (e) => this.handleCategoryDragEnd(e));
-        });
-
-        // Category action buttons
-        document.querySelectorAll('.category-edit-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
-                this.editCategory(categoryIndex);
-            });
-        });
-
-        document.querySelectorAll('.category-delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
-                this.deleteCategory(categoryIndex);
-            });
-        });
-
-        // Add bookmark buttons
-        document.querySelectorAll('.add-bookmark-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
-                this.openAddBookmarkModal(categoryIndex);
-            });
-        });
-
-        // Bookmark drag and drop
-        document.querySelectorAll('.bookmark-item').forEach(item => {
-            item.addEventListener('dragstart', (e) => this.handleBookmarkDragStart(e));
-            item.addEventListener('dragend', (e) => this.handleBookmarkDragEnd(e));
-        });
-
-        // Bookmark action buttons
-        document.querySelectorAll('.bookmark-edit-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
-                const bookmarkIndex = parseInt(e.target.dataset.bookmarkIndex);
-                this.editBookmark(categoryIndex, bookmarkIndex);
-            });
-        });
-
-        document.querySelectorAll('.bookmark-delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
-                const bookmarkIndex = parseInt(e.target.dataset.bookmarkIndex);
-                this.deleteBookmark(categoryIndex, bookmarkIndex);
-            });
-        });
-    }
-
     // Category Management
     openCreateCategoryModal() {
         this.categoryModalMode = 'create';
         this.editingCategoryIndex = null;
         
-        // Update modal content for create mode
-        document.querySelector('#create-category-modal .modal-header h3').textContent = 'Create New Category';
-        document.querySelector('#create-category-form button[type="submit"]').textContent = 'Create Category';
-        
+        document.getElementById('create-category-modal-title').textContent = 'Create New Category';
         document.getElementById('category-name').value = '';
+        document.getElementById('save-category').textContent = 'Create Category';
+        
         this.openModal('create-category-modal');
         document.getElementById('category-name').focus();
     }
@@ -397,13 +355,13 @@ class LinkShelfDashboard {
     openEditCategoryModal(categoryIndex) {
         this.categoryModalMode = 'edit';
         this.editingCategoryIndex = categoryIndex;
+        
         const category = this.categories[categoryIndex];
         
-        // Update modal content for edit mode
-        document.querySelector('#create-category-modal .modal-header h3').textContent = 'Edit Category';
-        document.querySelector('#create-category-form button[type="submit"]').textContent = 'Update Category';
-        
+        document.getElementById('create-category-modal-title').textContent = 'Edit Category';
         document.getElementById('category-name').value = category.name;
+        document.getElementById('save-category').textContent = 'Update Category';
+        
         this.openModal('create-category-modal');
         document.getElementById('category-name').focus();
         document.getElementById('category-name').select(); // Select existing text for easy editing
@@ -411,6 +369,7 @@ class LinkShelfDashboard {
 
     async handleCategoryFormSubmit(e) {
         e.preventDefault();
+        
         const name = document.getElementById('category-name').value.trim();
         
         if (!name) {
@@ -419,10 +378,11 @@ class LinkShelfDashboard {
         }
 
         if (this.categoryModalMode === 'create') {
-            // Create new category - find first available slot in leftmost column
+            // Find first available slot in grid
             const slot = this.findFirstAvailableSlot();
+            
             const newCategory = {
-                id: Date.now().toString(),
+                id: this.generateId(),
                 name: name,
                 bookmarks: [],
                 column: slot.column,
@@ -455,7 +415,7 @@ class LinkShelfDashboard {
         const category = this.categories[categoryIndex];
         const bookmarkCount = category.bookmarks.length;
         
-        let message = `Are you sure you want to delete "${category.name}"?`;
+        let message = `Are you sure you want to delete the category "${category.name}"?`;
         if (bookmarkCount > 0) {
             message += `\n\nThis will also delete ${bookmarkCount} bookmark${bookmarkCount > 1 ? 's' : ''}.`;
         }
@@ -470,6 +430,38 @@ class LinkShelfDashboard {
                 this.showToast('Category deleted successfully', 'success');
             }
         );
+    }
+
+    // Category Dropdown Management
+    toggleCategoryDropdown(categoryIndex) {
+        const dropdown = document.querySelector(`.category-dropdown-menu[data-category-index="${categoryIndex}"]`);
+        if (!dropdown) return;
+        
+        const isCurrentlyOpen = dropdown.classList.contains('show');
+        
+        // Close all dropdowns first
+        this.closeCategoryDropdowns();
+        
+        // If the clicked dropdown wasn't open, open it
+        if (!isCurrentlyOpen) {
+            dropdown.classList.add('show');
+            // Add high z-index class to the category
+            const categoryColumn = dropdown.closest('.category-column');
+            if (categoryColumn) {
+                categoryColumn.classList.add('dropdown-open');
+            }
+        }
+    }
+
+    closeCategoryDropdowns() {
+        document.querySelectorAll('.category-dropdown-menu').forEach(dropdown => {
+            dropdown.classList.remove('show');
+            // Remove high z-index class from the category
+            const categoryColumn = dropdown.closest('.category-column');
+            if (categoryColumn) {
+                categoryColumn.classList.remove('dropdown-open');
+            }
+        });
     }
 
     // Bookmark Management
@@ -513,61 +505,64 @@ class LinkShelfDashboard {
 
     async handleSaveBookmark(e) {
         e.preventDefault();
+        
         const rawUrl = document.getElementById('bookmark-url').value.trim();
         const name = document.getElementById('bookmark-name').value.trim();
         const rawFaviconUrl = document.getElementById('bookmark-favicon-url').value.trim();
         
-        if (!rawUrl || !name) {
-            this.showToast('URL and name are required', 'error');
+        if (!rawUrl) {
+            this.showToast('URL is required', 'error');
             return;
         }
 
-        // Normalize URLs by adding https:// if missing
-        const url = this.normalizeUrl(rawUrl);
-        const faviconUrl = rawFaviconUrl ? this.normalizeUrl(rawFaviconUrl) : '';
-
-        // Update input field with normalized URL so user sees the complete URL
-        document.getElementById('bookmark-url').value = url;
-        if (faviconUrl) {
-            document.getElementById('bookmark-favicon-url').value = faviconUrl;
-        }
-
-        if (!this.isValidUrl(url)) {
-            this.showToast('Please enter a valid URL', 'error');
+        if (!name) {
+            this.showToast('Bookmark name is required', 'error');
             return;
         }
 
-        if (faviconUrl && !this.isValidUrl(faviconUrl)) {
-            this.showToast('Please enter a valid favicon URL or leave it blank', 'error');
-            return;
-        }
-
-        // Show loading state
         const saveBtn = document.getElementById('save-bookmark');
         const originalText = saveBtn.textContent;
-        saveBtn.textContent = 'Caching favicon...';
+        saveBtn.textContent = 'Saving...';
         saveBtn.disabled = true;
 
         try {
-            const bookmark = { url, name };
+            // Normalize URL
+            const normalizedUrl = this.normalizeUrl(rawUrl);
             
-            // Handle favicon caching
-            if (faviconUrl) {
-                // Use custom favicon URL, cache it locally
-                bookmark.faviconData = await this.cacheFavicon(faviconUrl);
-            } else {
-                // Try to cache the auto-detected favicon
-                const autoFaviconUrl = this.getFaviconUrl(url);
-                bookmark.faviconData = await this.cacheFavicon(autoFaviconUrl);
+            let faviconData = null;
+            
+            // Use custom favicon if provided, otherwise try to fetch from domain
+            if (rawFaviconUrl) {
+                try {
+                    faviconData = await this.fetchFaviconAsDataUrl(rawFaviconUrl);
+                } catch (error) {
+                    console.warn('Could not fetch custom favicon:', error);
+                }
             }
+            
+            // If no custom favicon or it failed, try domain favicon
+            if (!faviconData) {
+                try {
+                    faviconData = await this.fetchFaviconAsDataUrl(normalizedUrl);
+                } catch (error) {
+                    console.warn('Could not fetch domain favicon:', error);
+                }
+            }
+
+            const bookmarkData = {
+                id: this.generateId(),
+                name: name,
+                url: normalizedUrl,
+                faviconData: faviconData
+            };
             
             if (this.currentEditingBookmark !== null) {
                 // Update existing bookmark
-                this.categories[this.currentEditingCategory].bookmarks[this.currentEditingBookmark] = bookmark;
+                this.categories[this.currentEditingCategory].bookmarks[this.currentEditingBookmark] = bookmarkData;
                 this.showToast('Bookmark updated successfully', 'success');
             } else {
                 // Add new bookmark
-                this.categories[this.currentEditingCategory].bookmarks.push(bookmark);
+                this.categories[this.currentEditingCategory].bookmarks.push(bookmarkData);
                 this.showToast('Bookmark added successfully', 'success');
             }
 
@@ -584,14 +579,74 @@ class LinkShelfDashboard {
         }
     }
 
+    hideBookmarkPreview() {
+        const preview = document.querySelector('.bookmark-preview');
+        if (preview) {
+            preview.classList.remove('visible');
+        }
+    }
+
+    handleUrlInputDebounced(e) {
+        // Debounced URL input handler for bookmarks
+        clearTimeout(this.bookmarkUrlTimeout);
+        this.bookmarkUrlTimeout = setTimeout(() => {
+            this.handleUrlInputImmediate(e);
+        }, 500);
+    }
+
+    handleUrlInputImmediate(e) {
+        // Immediate URL input handler for bookmarks
+        clearTimeout(this.bookmarkUrlTimeout);
+        this.handleBookmarkUrlInput(e);
+    }
+
+    async handleBookmarkUrlInput(e) {
+        const url = e.target.value.trim();
+        const nameInput = document.getElementById('bookmark-name');
+        
+        if (!url) {
+            return;
+        }
+
+        try {
+            const normalizedUrl = this.normalizeUrl(url);
+            
+            // Try to fetch title if name field is empty
+            if (!nameInput.value.trim()) {
+                const response = await fetch(normalizedUrl);
+                const text = await response.text();
+                const titleMatch = text.match(/<title[^>]*>([^<]*)<\/title>/i);
+                if (titleMatch) {
+                    nameInput.value = titleMatch[1].trim();
+                }
+            }
+        } catch (error) {
+            console.warn('Could not fetch page title:', error);
+        }
+    }
+
+    handleFaviconUrlInput(e) {
+        // Handle custom favicon URL input for bookmarks
+        const faviconUrl = e.target.value.trim();
+        const preview = document.querySelector('.bookmark-preview');
+        const favicon = document.getElementById('bookmark-favicon');
+        
+        if (faviconUrl && favicon) {
+            // Show preview with custom favicon
+            favicon.src = faviconUrl;
+            preview.classList.add('visible');
+        }
+    }
+
     deleteBookmark(categoryIndex, bookmarkIndex) {
-        const bookmark = this.categories[categoryIndex].bookmarks[bookmarkIndex];
+        const bookmarksArray = this.categories[categoryIndex].bookmarks;
+        const bookmark = bookmarksArray[bookmarkIndex];
         
         this.showConfirmation(
             'Delete Bookmark',
             `Are you sure you want to delete "${bookmark.name}"?`,
             () => {
-                this.categories[categoryIndex].bookmarks.splice(bookmarkIndex, 1);
+                bookmarksArray.splice(bookmarkIndex, 1);
                 this.saveData();
                 this.renderDashboard();
                 this.showToast('Bookmark deleted successfully', 'success');
@@ -599,237 +654,605 @@ class LinkShelfDashboard {
         );
     }
 
-    // URL and Favicon Handling
-    handleUrlInputDebounced(e) {
-        // Clear any existing timeout
-        if (this.urlFetchTimeout) {
-            clearTimeout(this.urlFetchTimeout);
+    async moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition) {
+        // Get the bookmark being moved from source category
+        const bookmark = this.categories[sourceCategoryIndex].bookmarks[sourceBookmarkIndex];
+        if (!bookmark) {
+            console.error('Bookmark not found at source position');
+            return;
         }
         
-        // Set a new timeout to fetch after user stops typing
-        this.urlFetchTimeout = setTimeout(() => {
-            this.processUrlInput(e.target.value.trim());
-        }, 1000); // Wait 1 second after user stops typing
-    }
-    
-    handleUrlInputImmediate(e) {
-        // Clear any pending debounced fetch
-        if (this.urlFetchTimeout) {
-            clearTimeout(this.urlFetchTimeout);
-            this.urlFetchTimeout = null;
-        }
+        // Remove bookmark from source category
+        this.categories[sourceCategoryIndex].bookmarks.splice(sourceBookmarkIndex, 1);
         
-        // Process immediately when user leaves the field
-        this.processUrlInput(e.target.value.trim());
-    }
-    
-    async processUrlInput(rawUrl) {
-        // Normalize URL by adding https:// if missing
-        const url = this.normalizeUrl(rawUrl);
-        
-        if (this.isValidUrl(url)) {
-            // Update the input field with normalized URL so user sees https://
-            document.getElementById('bookmark-url').value = url;
-            
-            // Get custom favicon URL if user provided one
-            const customFaviconUrl = document.getElementById('bookmark-favicon-url').value.trim() || null;
-            
-            try {
-                // Show a nice fallback name immediately
-                const fallbackName = this.getUrlDisplayName(url);
-                await this.showBookmarkPreview(url, fallbackName, customFaviconUrl);
-                
-                // Try to fetch the real title
-                const title = await this.fetchPageTitle(url);
-                
-                // Only update if we got a real title (not just the fallback)
-                if (title && title !== fallbackName && title !== url) {
-                    if (!document.getElementById('bookmark-name').value || document.getElementById('bookmark-name').value === fallbackName) {
-                        document.getElementById('bookmark-name').value = title;
-                        // No need to update preview again as favicon is already cached
-                        document.getElementById('bookmark-title-preview').textContent = title;
-                    }
-                } else {
-                    // Use fallback if no title was fetched
-                    if (!document.getElementById('bookmark-name').value) {
-                        document.getElementById('bookmark-name').value = fallbackName;
-                    }
-                }
-            } catch (error) {
-                console.error('Error processing URL input:', error);
-                const fallbackName = this.getUrlDisplayName(url);
-                if (!document.getElementById('bookmark-name').value) {
-                    document.getElementById('bookmark-name').value = fallbackName;
-                }
-                await this.showBookmarkPreview(url, fallbackName, customFaviconUrl);
+        if (sourceCategoryIndex === targetCategoryIndex) {
+            // Moving within the same category - adjust target position if needed
+            let adjustedTargetPosition = targetPosition;
+            if (sourceBookmarkIndex < targetPosition) {
+                adjustedTargetPosition = targetPosition - 1;
             }
+            // Insert bookmark at target position
+            this.categories[targetCategoryIndex].bookmarks.splice(adjustedTargetPosition, 0, bookmark);
+            } else {
+            // Moving to different category
+            // Insert bookmark at target position
+            this.categories[targetCategoryIndex].bookmarks.splice(targetPosition, 0, bookmark);
+            }
+            
+            await this.saveData();
+            this.renderDashboard();
+        
+        if (sourceCategoryIndex === targetCategoryIndex) {
+            this.showToast('Bookmark reordered successfully', 'success');
         } else {
-            this.hideBookmarkPreview();
-        }
-    }
-    
-    async handleFaviconUrlInput(e) {
-        // Update preview when custom favicon URL changes
-        const url = document.getElementById('bookmark-url').value.trim();
-        const title = document.getElementById('bookmark-name').value.trim();
-        const rawFaviconUrl = e.target.value.trim();
-        
-        let customFaviconUrl = null;
-        if (rawFaviconUrl) {
-            customFaviconUrl = this.normalizeUrl(rawFaviconUrl);
-            // Update input field with normalized URL
-            e.target.value = customFaviconUrl;
-        }
-        
-        if (this.isValidUrl(url)) {
-            await this.showBookmarkPreview(url, title || this.getUrlDisplayName(url), customFaviconUrl);
+            this.showToast('Bookmark moved to another category', 'success');
         }
     }
 
-    async fetchPageTitle(url) {
-        // Method 1: Try direct fetch with Chrome extension permissions
-        try {
-            const response = await fetch(url, { 
-                method: 'GET',
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Chrome Extension)'
+    // Favourites Rendering
+    renderFavouritesBar() {
+        const favouritesBar = document.getElementById('favourites-bar');
+        
+        if (!this.showFavourites) {
+            favouritesBar.classList.add('hidden');
+            return;
+        }
+        
+        favouritesBar.classList.remove('hidden');
+        
+        let favouritesHtml = `
+            <div class="favourites-header">
+                <h4 class="favourites-title">Favourites</h4>
+                <button class="favourites-edit-btn ${this.favouritesEditMode ? 'active' : ''}" title="${this.favouritesEditMode ? 'Exit Edit Mode' : 'Edit Favourites'}">
+                    ${this.favouritesEditMode ? 'Done' : 'Edit'}
+                </button>
+            </div>
+            <div class="favourites-container ${this.favouritesEditMode ? 'edit-mode' : ''}">
+        `;
+        
+        // Render favourite items
+        this.favourites.forEach((favourite, index) => {
+            favouritesHtml += this.renderFavourite(favourite, index);
+        });
+        
+        // Add "Add Favourite" button
+        favouritesHtml += `
+                <div class="add-favourite-btn" title="Add Favourite">
+                    +
+                </div>
+            </div>
+        `;
+        
+        favouritesBar.innerHTML = favouritesHtml;
+        this.setupFavouritesEventListeners();
+    }
+    
+    renderFavourite(favourite, index) {
+        const faviconSrc = favourite.faviconData || this.getFallbackIcon();
+        const fallbackIcon = this.getFallbackIcon();
+        
+        return `
+            <div class="favourite-item" data-favourite-index="${index}" draggable="true" title="${this.escapeHtml(favourite.title)}">
+                <a href="${this.escapeHtml(favourite.url)}" ${this.openLinksInNewTab ? 'target="_blank"' : ''} class="favourite-link">
+                    <img class="favourite-favicon" src="${faviconSrc}" alt="Favicon" data-fallback="${fallbackIcon}">
+                </a>
+                ${this.favouritesEditMode ? `
+                    <div class="favourite-actions">
+                        <button class="action-btn edit-btn" data-favourite-index="${index}" title="Edit Favourite">
+                            ✏️
+                        </button>
+                        <button class="action-btn delete-btn" data-favourite-index="${index}" title="Delete Favourite">
+                            🗑️
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    // Favourites Event Listeners
+    setupFavouritesEventListeners() {
+        // Edit button
+        const editBtn = document.querySelector('.favourites-edit-btn');
+        if (editBtn) {
+            editBtn.addEventListener('click', () => this.toggleFavouritesEditMode());
+        }
+        
+        // Add favourite button
+        const addFavouriteBtn = document.querySelector('.add-favourite-btn');
+        if (addFavouriteBtn) {
+            addFavouriteBtn.addEventListener('click', () => this.openAddFavouriteModal());
+        }
+
+        // Favourite action buttons (only in edit mode)
+        document.querySelectorAll('.favourite-item .edit-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const favouriteIndex = parseInt(e.target.closest('.favourite-item').dataset.favouriteIndex);
+                this.editFavourite(favouriteIndex);
+            });
+        });
+
+        document.querySelectorAll('.favourite-item .delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const favouriteIndex = parseInt(e.target.closest('.favourite-item').dataset.favouriteIndex);
+                this.deleteFavourite(favouriteIndex);
+            });
+        });
+
+        // Favourite drag and drop
+        document.querySelectorAll('.favourite-item').forEach(item => {
+            item.addEventListener('dragstart', (e) => this.handleFavouriteDragStart(e));
+            item.addEventListener('dragend', (e) => this.handleFavouriteDragEnd(e));
+            item.addEventListener('dragover', (e) => this.handleFavouriteDragOver(e));
+            item.addEventListener('dragleave', (e) => this.handleFavouriteDragLeave(e));
+            item.addEventListener('drop', (e) => this.handleFavouriteDrop(e));
+        });
+
+        // Favicon error handling for favourites
+        document.querySelectorAll('.favourite-favicon').forEach(img => {
+            img.addEventListener('error', (e) => {
+                const fallbackIcon = e.target.dataset.fallback;
+                if (fallbackIcon && e.target.src !== fallbackIcon) {
+                    e.target.src = fallbackIcon;
                 }
             });
-            
-            if (response.ok) {
-                const text = await response.text();
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(text, 'text/html');
-                const titleElement = doc.querySelector('title');
-                
-                if (titleElement && titleElement.textContent.trim()) {
-                    const title = titleElement.textContent.trim();
-                    // Clean up common title patterns
-                    return title.replace(/\s+/g, ' ').substring(0, 100); // Limit length
-                }
-                
-                // Try meta title if no title tag
-                const metaTitle = doc.querySelector('meta[property="og:title"]');
-                if (metaTitle && metaTitle.getAttribute('content')) {
-                    return metaTitle.getAttribute('content').trim().substring(0, 100);
-                }
-            }
-        } catch (error) {
-            // Fetch failed (likely due to CORS), will use fallback
-        }
-        
-        // Method 2: Return null so the calling function uses fallback
-        return null;
+        });
     }
-    
-    getUrlDisplayName(url) {
+
+    // Favourites Management
+    openAddFavouriteModal() {
+        this.currentEditingFavourite = null;
+        this.editingFavouriteIndex = null;
+        
+        document.getElementById('favourite-modal-title').textContent = 'Add Favourite';
+        document.getElementById('favourite-url').value = '';
+        document.getElementById('favourite-title').value = '';
+        document.getElementById('favourite-favicon').value = '';
+        document.getElementById('save-favourite').textContent = 'Save Favourite';
+        
+        this.openModal('favourite-modal');
+        document.getElementById('favourite-url').focus();
+    }
+
+    editFavourite(favouriteIndex) {
+        const favourite = this.favourites[favouriteIndex];
+        this.currentEditingFavourite = favourite;
+        this.editingFavouriteIndex = favouriteIndex;
+        
+        document.getElementById('favourite-modal-title').textContent = 'Edit Favourite';
+        document.getElementById('favourite-url').value = favourite.url;
+        document.getElementById('favourite-title').value = favourite.title;
+        document.getElementById('favourite-favicon').value = '';
+        document.getElementById('save-favourite').textContent = 'Update Favourite';
+        
+        this.openModal('favourite-modal');
+        document.getElementById('favourite-url').focus();
+    }
+
+    deleteFavourite(favouriteIndex) {
+        const favourite = this.favourites[favouriteIndex];
+        this.showConfirmation(
+            'Delete Favourite',
+            `Are you sure you want to delete "${favourite.title}"?`,
+            () => {
+                this.favourites.splice(favouriteIndex, 1);
+                this.saveData();
+                this.renderDashboard();
+                this.showToast('Favourite deleted successfully', 'success');
+            }
+        );
+    }
+
+    async handleSaveFavourite(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const url = formData.get('url').trim();
+        const title = formData.get('title').trim();
+        const customFaviconUrl = formData.get('favicon').trim();
+        
+        if (!url) {
+            this.showToast('URL is required', 'error');
+            return;
+        }
+
+        const saveBtn = document.getElementById('save-favourite');
+        saveBtn.disabled = true;
+        
         try {
-            const urlObj = new URL(url);
-            let hostname = urlObj.hostname.replace('www.', '');
+            // Normalize URL
+            const normalizedUrl = this.normalizeUrl(url);
             
-            // Create a more readable name from the hostname
-            const parts = hostname.split('.');
-            if (parts.length >= 2) {
-                // Take the main domain name and capitalize it
-                const mainDomain = parts[parts.length - 2];
-                return mainDomain.charAt(0).toUpperCase() + mainDomain.slice(1);
+            let faviconData = null;
+            let finalTitle = title;
+            
+            // If no custom title provided, try to fetch it
+            if (!finalTitle) {
+                try {
+                    const response = await fetch(normalizedUrl);
+                    const text = await response.text();
+                    const titleMatch = text.match(/<title[^>]*>([^<]*)<\/title>/i);
+                    if (titleMatch) {
+                        finalTitle = titleMatch[1].trim();
+                    }
+                } catch (error) {
+                    console.warn('Could not fetch title:', error);
+                }
             }
             
-            return hostname;
-        } catch {
-            return 'Bookmark';
+            // Use custom favicon if provided, otherwise try to fetch
+            if (customFaviconUrl) {
+                try {
+                    faviconData = await this.fetchFaviconAsDataUrl(customFaviconUrl);
+                } catch (error) {
+                    console.warn('Could not fetch custom favicon:', error);
+                }
+            } else {
+                try {
+                    faviconData = await this.fetchFaviconAsDataUrl(normalizedUrl);
+                } catch (error) {
+                    console.warn('Could not fetch favicon:', error);
+                }
+            }
+            
+            // Fallback title if still empty
+            if (!finalTitle) {
+                finalTitle = normalizedUrl;
+            }
+            
+            const favouriteData = {
+                id: this.generateId(),
+                url: normalizedUrl,
+                title: finalTitle,
+                faviconData: faviconData
+            };
+            
+            if (this.editingFavouriteIndex !== null) {
+                // Update existing favourite
+                this.favourites[this.editingFavouriteIndex] = { ...this.favourites[this.editingFavouriteIndex], ...favouriteData };
+                this.showToast('Favourite updated successfully', 'success');
+            } else {
+                // Add new favourite
+                this.favourites.push(favouriteData);
+                this.showToast('Favourite added successfully', 'success');
+            }
+            
+            await this.saveData();
+            this.renderDashboard();
+            this.closeModal('favourite-modal');
+            
+        } catch (error) {
+            console.error('Error saving favourite:', error);
+            this.showToast('Error saving favourite', 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.textContent = this.editingFavouriteIndex !== null ? 'Update Favourite' : 'Save Favourite';
         }
     }
 
-    getFaviconUrl(url, customFaviconUrl = null) {
-        // Use custom favicon URL if provided
-        if (customFaviconUrl) {
-            return customFaviconUrl;
-        }
+    handleShowFavouritesChange(e) {
+        this.showFavourites = e.target.checked;
+        this.saveData();
+        this.renderDashboard();
+        this.showToast(`Favourites bar ${this.showFavourites ? 'enabled' : 'disabled'}`, 'success');
+    }
+
+    handleOpenLinksInNewTabChange(e) {
+        this.openLinksInNewTab = e.target.checked;
+        this.saveData();
+        this.renderDashboard();
+        this.showToast(`Links will now open in ${this.openLinksInNewTab ? 'new tab' : 'current tab'}`, 'success');
+    }
+
+    toggleFavouritesEditMode() {
+        this.favouritesEditMode = !this.favouritesEditMode;
+        this.renderDashboard();
         
-        // Otherwise use standard favicon.ico approach
-        try {
-            const urlObj = new URL(url);
-            return `${urlObj.protocol}//${urlObj.hostname}/favicon.ico`;
-        } catch {
-            return this.getFallbackIcon();
+        if (this.favouritesEditMode) {
+            this.showToast('Favourites edit mode enabled', 'info');
+        } else {
+            this.showToast('Favourites edit mode disabled', 'info');
         }
     }
-    
-    getFallbackIcon() {
-        return 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Cpath fill="%23C0C9D1" d="M8 2a6 6 0 100 12A6 6 0 008 2zM7 5a1 1 0 012 0v3a1 1 0 01-2 0V5zm1 5.25a1.25 1.25 0 100 2.5 1.25 1.25 0 000-2.5z"/%3E%3C/svg%3E';
-    }
-    
-    async cacheFavicon(faviconUrl) {
-        if (!faviconUrl || !this.isValidUrl(faviconUrl)) {
-            return this.getFallbackIcon();
+
+    // URL and Favicon Handling
+    normalizeUrl(url) {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+            return url;
         }
+        return 'https://' + url;
+    }
+
+    async fetchFaviconAsDataUrl(url) {
+        const domain = new URL(url).origin;
+        const faviconUrl = `${domain}/favicon.ico`;
         
         try {
-            console.log('Caching favicon:', faviconUrl);
-            
-            // Fetch the favicon
             const response = await fetch(faviconUrl);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
+            if (!response.ok) throw new Error('Favicon not found');
             
-            // Get the image as blob
             const blob = await response.blob();
-            
-            // Convert to base64 data URL
             return new Promise((resolve) => {
                 const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = () => resolve(this.getFallbackIcon());
+                reader.onloadend = () => resolve(reader.result);
                 reader.readAsDataURL(blob);
             });
-        } catch (error) {
-            console.log('Failed to cache favicon:', error.message);
-            return this.getFallbackIcon();
-        }
-    }
-
-    async showBookmarkPreview(url, title, customFaviconUrl = null) {
-        const preview = document.querySelector('.bookmark-preview');
-        const favicon = document.getElementById('bookmark-favicon');
-        const titlePreview = document.getElementById('bookmark-title-preview');
-        
-        titlePreview.textContent = title || url;
-        preview.classList.add('visible');
-        
-        // Show fallback icon immediately
-        favicon.src = this.getFallbackIcon();
-        
-        // Cache and show the real favicon
-        const faviconUrl = customFaviconUrl || this.getFaviconUrl(url);
-        if (faviconUrl && faviconUrl !== this.getFallbackIcon()) {
-            try {
-                const cachedFavicon = await this.cacheFavicon(faviconUrl);
-                favicon.src = cachedFavicon;
             } catch (error) {
-                console.log('Failed to preview favicon:', error);
-                // Keep fallback icon
-            }
+            throw new Error('Could not fetch favicon');
         }
     }
 
-    hideBookmarkPreview() {
-        const preview = document.querySelector('.bookmark-preview');
-        preview.classList.remove('visible');
+    handleFavouriteUrlInputDebounced(e) {
+        // Debounced URL input handler for favourites
+        clearTimeout(this.favouriteUrlTimeout);
+        this.favouriteUrlTimeout = setTimeout(() => {
+            this.handleFavouriteUrlInput(e);
+        }, 500);
     }
 
-    // Drag and Drop
+    handleFavouriteUrlInputImmediate(e) {
+        // Immediate URL input handler for favourites
+        clearTimeout(this.favouriteUrlTimeout);
+        this.handleFavouriteUrlInput(e);
+    }
+
+    async handleFavouriteUrlInput(e) {
+        const url = e.target.value.trim();
+        const statusDiv = document.getElementById('favourite-url-status');
+        const titleInput = document.getElementById('favourite-title');
+        
+        if (!url) {
+            statusDiv.textContent = '';
+            statusDiv.className = 'url-status';
+            return;
+        }
+
+        statusDiv.textContent = 'Checking URL...';
+        statusDiv.className = 'url-status checking';
+
+        try {
+            const normalizedUrl = this.normalizeUrl(url);
+            
+            // Try to fetch title if title field is empty
+            if (!titleInput.value.trim()) {
+                const response = await fetch(normalizedUrl);
+                const text = await response.text();
+                const titleMatch = text.match(/<title[^>]*>([^<]*)<\/title>/i);
+                if (titleMatch) {
+                    titleInput.value = titleMatch[1].trim();
+                }
+            }
+            
+            statusDiv.textContent = '✓ URL is accessible';
+            statusDiv.className = 'url-status success';
+        } catch (error) {
+            statusDiv.textContent = '⚠ Could not access URL';
+            statusDiv.className = 'url-status warning';
+        }
+    }
+
+    handleFavouriteFaviconUrlInput(e) {
+        // Handle custom favicon URL input for favourites
+        const faviconUrl = e.target.value.trim();
+        if (faviconUrl) {
+            // You could add favicon preview functionality here
+        }
+    }
+
+    // Favourite Drag and Drop
+    handleFavouriteDragStart(e) {
+        const favouriteItem = e.target.closest('.favourite-item');
+        this.draggedElement = favouriteItem;
+        this.draggedType = 'favourite';
+        
+        favouriteItem.classList.add('dragging');
+        document.body.classList.add('dragging-favourite');
+    }
+
+    handleFavouriteDragEnd(e) {
+        const favouriteItem = e.target.closest('.favourite-item');
+        
+        favouriteItem.classList.remove('dragging');
+        document.body.classList.remove('dragging-favourite');
+        this.draggedElement = null;
+        this.draggedType = null;
+        
+        // Clean up any drag-over classes
+        document.querySelectorAll('.favourite-item.drag-over-before, .favourite-item.drag-over-after').forEach(item => {
+            item.classList.remove('drag-over-before', 'drag-over-after');
+        });
+    }
+
+    handleFavouriteDragOver(e) {
+        if (this.draggedType !== 'favourite') return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        
+        const favouriteItem = e.target.closest('.favourite-item');
+        if (!favouriteItem || favouriteItem === this.draggedElement) return;
+        
+        // Clear drag-over classes from all items
+        document.querySelectorAll('.favourite-item.drag-over-before, .favourite-item.drag-over-after').forEach(item => {
+            item.classList.remove('drag-over-before', 'drag-over-after');
+        });
+        
+        // Determine if we should insert before or after based on mouse position
+        const rect = favouriteItem.getBoundingClientRect();
+        const midX = rect.left + rect.width / 2;
+        const insertBefore = e.clientX < midX;
+        
+        if (insertBefore) {
+            favouriteItem.classList.add('drag-over-before');
+        } else {
+            favouriteItem.classList.add('drag-over-after');
+        }
+    }
+
+    handleFavouriteDragLeave(e) {
+        if (this.draggedType !== 'favourite') return;
+        
+        const favouriteItem = e.target.closest('.favourite-item');
+        if (!favouriteItem) return;
+        
+        // Only remove classes if we're leaving the item entirely
+        if (!favouriteItem.contains(e.relatedTarget)) {
+            favouriteItem.classList.remove('drag-over-before', 'drag-over-after');
+        }
+    }
+
+    handleFavouriteDrop(e) {
+        if (this.draggedType !== 'favourite' || !this.draggedElement) return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const targetItem = e.target.closest('.favourite-item');
+        if (!targetItem) return;
+        
+        const draggedIndex = parseInt(this.draggedElement.dataset.favouriteIndex);
+        const targetIndex = parseInt(targetItem.dataset.favouriteIndex);
+        
+        if (draggedIndex === targetIndex) return;
+        
+        // Determine insert position
+        const insertBefore = targetItem.classList.contains('drag-over-before');
+        let newIndex = targetIndex;
+        
+        if (!insertBefore) {
+            newIndex = targetIndex + 1;
+        }
+        
+        // Adjust if dragging from before target
+        if (draggedIndex < newIndex) {
+            newIndex--;
+        }
+        
+        this.moveFavouriteToPosition(draggedIndex, newIndex);
+    }
+
+    moveFavouriteToPosition(fromIndex, toIndex) {
+        const favourite = this.favourites[fromIndex];
+        this.favourites.splice(fromIndex, 1);
+        this.favourites.splice(toIndex, 0, favourite);
+        
+        this.saveData();
+        this.renderDashboard();
+        this.showToast('Favourite reordered successfully', 'success');
+    }
+
+    // Category Event Listeners
+    setupCategoryEventListeners() {
+        // Category menu buttons
+        document.querySelectorAll('.category-menu-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
+                this.toggleCategoryDropdown(categoryIndex);
+            });
+        });
+
+        // Category dropdown action buttons
+        document.querySelectorAll('.category-edit-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
+                this.editCategory(categoryIndex);
+            });
+        });
+
+        document.querySelectorAll('.category-delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
+                this.deleteCategory(categoryIndex);
+            });
+        });
+
+        // Add bookmark plus buttons
+        document.querySelectorAll('.add-bookmark-plus-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
+                this.openAddBookmarkModal(categoryIndex);
+            });
+        });
+
+        // Category drag and drop
+        document.querySelectorAll('.category-column').forEach(column => {
+            column.addEventListener('dragstart', (e) => this.handleCategoryDragStart(e));
+            column.addEventListener('dragend', (e) => this.handleCategoryDragEnd(e));
+        });
+    }
+
+    setupColumnDropZones() {
+        // Setup drop zones for category positioning within columns
+        document.querySelectorAll('.column-drop-zone').forEach(dropZone => {
+            dropZone.addEventListener('dragover', (e) => this.handleColumnDropZoneDragOver(e));
+            dropZone.addEventListener('dragleave', (e) => this.handleColumnDropZoneDragLeave(e));
+            dropZone.addEventListener('drop', (e) => this.handleColumnDropZoneDrop(e));
+        });
+        
+        // Setup grid columns for drag events
+        document.querySelectorAll('.grid-column').forEach(column => {
+            column.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            });
+        });
+    }
+
+    setupBookmarkDragDrop() {
+        // Setup drag and drop for bookmark items and lists
+        const bookmarkItems = document.querySelectorAll('.bookmark-item');
+        bookmarkItems.forEach(item => {
+            item.addEventListener('dragover', (e) => this.handleBookmarkDragOver(e));
+            item.addEventListener('dragleave', (e) => this.handleBookmarkDragLeave(e));
+            item.addEventListener('drop', (e) => this.handleBookmarkDrop(e));
+        });
+        
+        // Setup drop zones on bookmark lists for empty lists
+        const bookmarksLists = document.querySelectorAll('.bookmarks-list');
+        bookmarksLists.forEach((list, index) => {
+            list.addEventListener('dragover', (e) => this.handleBookmarksListDragOver(e));
+            list.addEventListener('dragleave', (e) => this.handleBookmarksListDragLeave(e));
+            list.addEventListener('drop', (e) => this.handleBookmarksListDrop(e));
+        });
+        
+        // Also setup drop zones on category bodies as backup
+        const categoryBodies = document.querySelectorAll('.category-body');
+        categoryBodies.forEach(body => {
+            body.addEventListener('dragover', (e) => this.handleCategoryBodyDragOver(e));
+            body.addEventListener('dragleave', (e) => this.handleCategoryBodyDragLeave(e));
+            body.addEventListener('drop', (e) => this.handleCategoryBodyDrop(e));
+        });
+    }
+
+    setupEmptyStateEventListeners() {
+        // Empty state create category button
+        const emptyCreateBtn = document.getElementById('empty-create-category-btn');
+        if (emptyCreateBtn) {
+            emptyCreateBtn.addEventListener('click', () => this.openCreateCategoryModal());
+        }
+    }
+
+    // Drag and Drop Event Handlers (basic implementations)
     handleCategoryDragStart(e) {
-        this.draggedElement = e.target;
+        const categoryColumn = e.target.closest('.category-column');
+        this.draggedElement = categoryColumn;
         this.draggedType = 'category';
-        e.target.classList.add('dragging');
+        categoryColumn.classList.add('dragging');
         document.body.classList.add('dragging-category');
-        e.dataTransfer.effectAllowed = 'move';
     }
 
     handleCategoryDragEnd(e) {
-        e.target.classList.remove('dragging');
+        const categoryColumn = e.target.closest('.category-column');
+        categoryColumn.classList.remove('dragging');
         document.body.classList.remove('dragging-category');
         this.draggedElement = null;
         this.draggedType = null;
@@ -840,84 +1263,233 @@ class LinkShelfDashboard {
         });
     }
 
+    handleColumnDropZoneDragOver(e) {
+        if (this.draggedType !== 'category') return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        e.target.classList.add('drag-over');
+    }
+
+    handleColumnDropZoneDragLeave(e) {
+        e.target.classList.remove('drag-over');
+    }
+
+    handleColumnDropZoneDrop(e) {
+        if (this.draggedType !== 'category' || !this.draggedElement) return;
+        e.preventDefault();
+        e.target.classList.remove('drag-over');
+        
+        const dropZone = e.target;
+        const targetColumn = parseInt(dropZone.dataset.columnIndex);
+        const targetPosition = parseInt(dropZone.dataset.position);
+        
+        const draggedCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
+        const draggedCategory = this.categories[draggedCategoryIndex];
+        
+        if (!draggedCategory) return;
+        
+        // Don't do anything if dropping in the same position
+        if (draggedCategory.column === targetColumn && draggedCategory.position === targetPosition) {
+            return;
+        }
+        
+        this.moveCategoryToPosition(draggedCategoryIndex, targetColumn, targetPosition);
+    }
+
     handleBookmarkDragStart(e) {
-        e.stopPropagation(); // Prevent category drag
-        this.draggedElement = e.target;
+        e.stopPropagation(); // Prevent category drag from triggering
+        const bookmarkItem = e.target.closest('.bookmark-item');
+        this.draggedElement = bookmarkItem;
         this.draggedType = 'bookmark';
-        e.target.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
+        bookmarkItem.classList.add('dragging');
+        document.body.classList.add('dragging-bookmark');
     }
 
     handleBookmarkDragEnd(e) {
-        e.target.classList.remove('dragging');
+        const bookmarkItem = e.target.closest('.bookmark-item');
+        bookmarkItem.classList.remove('dragging');
+        document.body.classList.remove('dragging-bookmark');
         this.draggedElement = null;
         this.draggedType = null;
-    }
-
-    handleCategoryDragOver(e) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-    }
-
-    handleCategoryDrop(e) {
-        e.preventDefault();
         
-        if (!this.draggedElement) return;
-        
-        if (this.draggedType === 'bookmark') {
-            this.handleBookmarkMove(e);
-        }
-        // Category reordering is now handled by drop zones
-    }
-
-    handleBookmarkMove(e) {
-        const targetColumn = e.target.closest('.category-column');
-        if (!targetColumn) return;
-        
-        const targetCategoryIndex = parseInt(targetColumn.dataset.categoryIndex);
-        const draggedCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
-        const draggedBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
-        
-        // Remove bookmark from source category
-        const bookmark = this.categories[draggedCategoryIndex].bookmarks.splice(draggedBookmarkIndex, 1)[0];
-        
-        // Add bookmark to target category
-        this.categories[targetCategoryIndex].bookmarks.push(bookmark);
-        
-        this.saveData();
-        this.renderDashboard();
-        this.showToast('Bookmark moved successfully', 'success');
-    }
-
-    // Import/Export
-    exportBookmarks() {
-        let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
-<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
-<TITLE>Bookmarks</TITLE>
-<H1>Bookmarks</H1>
-<DL><p>
-`;
-
-        this.categories.forEach(category => {
-            html += `    <DT><H3>${this.escapeHtml(category.name)}</H3>\n    <DL><p>\n`;
-            category.bookmarks.forEach(bookmark => {
-                html += `        <DT><A HREF="${this.escapeHtml(bookmark.url)}">${this.escapeHtml(bookmark.name)}</A>\n`;
-            });
-            html += `    </DL><p>\n`;
+        // Clean up all drag-over visual feedback
+        document.querySelectorAll('.bookmark-item.drag-over-top, .bookmark-item.drag-over-bottom').forEach(item => {
+            item.classList.remove('drag-over-top', 'drag-over-bottom');
         });
+        document.querySelectorAll('.bookmarks-list.drag-over-empty').forEach(list => {
+            list.classList.remove('drag-over-empty');
+        });
+        document.querySelectorAll('.category-body.drag-over').forEach(body => {
+            body.classList.remove('drag-over');
+        });
+    }
 
-        html += `</DL><p>`;
+    handleBookmarkDragOver(e) {
+        if (this.draggedType !== 'bookmark') return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        
+        const targetBookmark = e.target.closest('.bookmark-item');
+        if (targetBookmark && targetBookmark !== this.draggedElement) {
+            // Clear previous highlights
+            document.querySelectorAll('.bookmark-item.drag-over-top, .bookmark-item.drag-over-bottom').forEach(item => {
+                item.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+            
+            // Determine insert position based on mouse position
+            const rect = targetBookmark.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            const insertAfter = e.clientY > midY;
+            
+            if (insertAfter) {
+                targetBookmark.classList.add('drag-over-bottom');
+            } else {
+                targetBookmark.classList.add('drag-over-top');
+            }
+        }
+    }
 
-        const blob = new Blob([html], { type: 'text/html' });
+    handleBookmarkDragLeave(e) {
+        // Handle drag leave for bookmarks
+    }
+
+    handleBookmarkDrop(e) {
+        if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const targetBookmark = e.target.closest('.bookmark-item');
+        if (!targetBookmark || targetBookmark === this.draggedElement) return;
+        
+        // Get source and target information
+        const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
+        const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
+        const targetCategoryIndex = parseInt(targetBookmark.dataset.categoryIndex);
+        const targetBookmarkIndex = parseInt(targetBookmark.dataset.bookmarkIndex);
+        
+        // Determine insert position based on mouse position
+        const rect = targetBookmark.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const insertAfter = e.clientY > midY;
+        const targetPosition = insertAfter ? targetBookmarkIndex + 1 : targetBookmarkIndex;
+        
+        this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+    }
+
+    handleBookmarksListDragOver(e) {
+        if (this.draggedType !== 'bookmark') return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        
+        const bookmarksList = e.target.closest('.bookmarks-list');
+        if (bookmarksList) {
+            bookmarksList.classList.add('drag-over-empty');
+        }
+    }
+
+    handleBookmarksListDragLeave(e) {
+        // Handle drag leave for bookmark lists
+    }
+
+    handleBookmarksListDrop(e) {
+        if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const bookmarksList = e.target.closest('.bookmarks-list');
+        if (!bookmarksList) return;
+        
+        const targetCategoryIndex = parseInt(bookmarksList.dataset.categoryIndex || 
+                                           bookmarksList.closest('.category-column').dataset.categoryIndex);
+        
+        // Get source information
+        const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
+        const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
+        
+        // Drop at the end of the target category
+        const targetPosition = this.categories[targetCategoryIndex].bookmarks.length;
+        
+        this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+    }
+
+    handleCategoryBodyDragOver(e) {
+        if (this.draggedType !== 'bookmark') return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        
+        const categoryBody = e.target.closest('.category-body');
+        if (categoryBody) {
+            categoryBody.classList.add('drag-over');
+        }
+    }
+
+    handleCategoryBodyDragLeave(e) {
+        // Handle drag leave for category bodies
+    }
+
+    handleCategoryBodyDrop(e) {
+        if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const categoryBody = e.target.closest('.category-body');
+        if (!categoryBody) return;
+        
+        const targetCategoryIndex = parseInt(categoryBody.closest('.category-column').dataset.categoryIndex);
+        
+        // Get source information
+        const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
+        const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
+        
+        // Drop at the end of the target category
+        const targetPosition = this.categories[targetCategoryIndex].bookmarks.length;
+        
+        this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+    }
+
+    // Settings and Import/Export
+    openSettingsModal() {
+        document.getElementById('column-count').value = this.columnCount;
+        document.getElementById('show-favourites').checked = this.showFavourites;
+        document.getElementById('open-links-new-tab').checked = this.openLinksInNewTab;
+        this.openModal('settings-modal');
+    }
+
+    async handleColumnCountChange(e) {
+        const newColumnCount = parseInt(e.target.value);
+        if (newColumnCount >= 1 && newColumnCount <= 5) {
+            this.columnCount = newColumnCount;
+            await this.saveData();
+            this.renderDashboard();
+            this.showToast(`Layout updated to ${newColumnCount} column${newColumnCount > 1 ? 's' : ''}`, 'success');
+        }
+    }
+
+    exportBookmarks() {
+        const data = {
+            categories: this.categories,
+            favourites: this.favourites,
+            columnCount: this.columnCount,
+            showFavourites: this.showFavourites,
+            openLinksInNewTab: this.openLinksInNewTab,
+            exportDate: new Date().toISOString(),
+            version: '1.0'
+        };
+
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'linkshelf_bookmarks.html';
+        a.download = `linkshelf-export-${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
         this.showToast('Bookmarks exported successfully', 'success');
-        this.closeModal('settings-modal');
     }
 
     triggerImport() {
@@ -928,112 +1500,52 @@ class LinkShelfDashboard {
         const file = e.target.files[0];
         if (!file) return;
 
-        // Show loading state
-        const importBtn = document.getElementById('import-bookmarks');
-        const originalText = importBtn.textContent;
-        importBtn.textContent = 'Importing...';
-        importBtn.disabled = true;
-
         try {
             const text = await file.text();
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(text, 'text/html');
-            
-            const folders = doc.querySelectorAll('DT > H3');
-            let importedCount = 0;
-            const bookmarksToCache = [];
-            
-            folders.forEach(folder => {
-                const categoryName = folder.textContent.trim();
-                if (!categoryName) return;
-                
-                // Create or find category
-                let category = this.categories.find(cat => cat.name === categoryName);
-                if (!category) {
-                    const slot = this.findFirstAvailableSlot();
-                    category = {
-                        id: Date.now().toString() + Math.random(),
-                        name: categoryName,
-                        bookmarks: [],
-                        column: slot.column,
-                        position: slot.position
-                    };
-                    this.categories.push(category);
-                }
-                
-                // Find bookmarks in this folder
-                const folderContainer = folder.parentElement.nextElementSibling;
-                if (folderContainer && folderContainer.tagName === 'DL') {
-                    const links = folderContainer.querySelectorAll('DT > A');
-                    links.forEach(link => {
-                        const url = link.getAttribute('HREF');
-                        const name = link.textContent.trim();
-                        
-                        if (url && name) {
-                            // Check if bookmark already exists
-                            const exists = category.bookmarks.some(bookmark => bookmark.url === url);
-                            if (!exists) {
-                                const bookmark = { url, name };
-                                category.bookmarks.push(bookmark);
-                                bookmarksToCache.push(bookmark);
-                                importedCount++;
-                            }
-                        }
-                    });
-                }
-            });
+            const data = JSON.parse(text);
 
-            // Save immediately with fallback icons
-            bookmarksToCache.forEach(bookmark => {
-                bookmark.faviconData = this.getFallbackIcon();
-            });
+            if (!data.categories || !Array.isArray(data.categories)) {
+                throw new Error('Invalid export file format');
+            }
+
+            // Import the data
+            this.categories = data.categories;
+            this.favourites = data.favourites || [];
+            this.columnCount = data.columnCount || 3;
+            this.showFavourites = data.showFavourites !== false;
+            this.openLinksInNewTab = data.openLinksInNewTab !== false;
             
             await this.saveData();
             this.renderDashboard();
-            this.showToast(`Successfully imported ${importedCount} bookmarks`, 'success');
             this.closeModal('settings-modal');
             
-            // Cache favicons in background
-            if (bookmarksToCache.length > 0) {
-                this.showToast(`Caching ${bookmarksToCache.length} favicons in background...`, 'info');
-                this.cacheFaviconsInBackground(bookmarksToCache);
-            }
-            
+            this.showToast(`Successfully imported ${data.categories.length} categories`, 'success');
         } catch (error) {
             console.error('Error importing bookmarks:', error);
-            this.showToast('Error importing bookmarks', 'error');
-        } finally {
-            // Reset button state
-            importBtn.textContent = originalText;
-            importBtn.disabled = false;
+            this.showToast('Error importing bookmarks: Invalid file format', 'error');
+        }
+
             // Reset file input
             e.target.value = '';
+    }
+
+    // UI helper methods
+    escapeHtml(text) {
+        if (text == null || text === undefined) {
+            return '';
         }
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return String(text).replace(/[&<>"']/g, m => map[m]);
     }
     
-    async cacheFaviconsInBackground(bookmarks) {
-        let cached = 0;
-        for (const bookmark of bookmarks) {
-            try {
-                const faviconUrl = this.getFaviconUrl(bookmark.url);
-                const faviconData = await this.cacheFavicon(faviconUrl);
-                bookmark.faviconData = faviconData;
-                cached++;
-                
-                // Save progress periodically
-                if (cached % 5 === 0) {
-                    await this.saveData();
-                    this.renderDashboard();
-                }
-            } catch (error) {
-                console.log(`Failed to cache favicon for ${bookmark.name}:`, error);
-            }
-        }
-        
-        // Final save
-        await this.saveData();
-        this.renderDashboard();
-        this.showToast(`Cached ${cached} favicons successfully`, 'success');
+    getFallbackIcon() {
+        return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjMzY0NTU0IiByeD0iMiIvPgo8cGF0aCBkPSJNNCA2SDEyVjEwSDRWNloiIGZpbGw9IiM4Qjk1QTEiLz4KPC9zdmc+Cg==';
     }
 
     // Modal Management
@@ -1045,85 +1557,6 @@ class LinkShelfDashboard {
     closeModal(modalId) {
         document.getElementById(modalId).classList.add('hidden');
         document.body.style.overflow = '';
-        
-        // Clean up any pending URL fetch timeouts when closing bookmark modal
-        if (modalId === 'bookmark-modal' && this.urlFetchTimeout) {
-            clearTimeout(this.urlFetchTimeout);
-            this.urlFetchTimeout = null;
-        }
-        
-        // Reset category modal state when closing
-        if (modalId === 'create-category-modal') {
-            this.categoryModalMode = 'create';
-            this.editingCategoryIndex = null;
-        }
-    }
-
-    closeAllModals() {
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.classList.add('hidden');
-        });
-        document.body.style.overflow = '';
-        
-        // Clean up any pending URL fetch timeouts
-        if (this.urlFetchTimeout) {
-            clearTimeout(this.urlFetchTimeout);
-            this.urlFetchTimeout = null;
-        }
-        
-        // Reset category modal state
-        this.categoryModalMode = 'create';
-        this.editingCategoryIndex = null;
-    }
-
-    openSettingsModal() {
-        // Update the column count dropdown to show current value
-        document.getElementById('column-count').value = this.columnCount.toString();
-        this.openModal('settings-modal');
-    }
-
-    async handleColumnCountChange(e) {
-        const newColumnCount = parseInt(e.target.value);
-        if (newColumnCount >= 1 && newColumnCount <= 7) {
-            const oldColumnCount = this.columnCount;
-            this.columnCount = newColumnCount;
-            
-            // Redistribute categories that are now outside the column range
-            this.categories.forEach(category => {
-                if (category.column >= newColumnCount) {
-                    // Find first available slot in valid columns
-                    const slot = this.findFirstAvailableSlotInRange(0, newColumnCount - 1);
-                    category.column = slot.column;
-                    category.position = slot.position;
-                }
-            });
-            
-            await this.saveData();
-            this.renderDashboard();
-            this.showToast(`Layout updated to ${newColumnCount} column${newColumnCount > 1 ? 's' : ''}`, 'success');
-        }
-    }
-
-    findFirstAvailableSlotInRange(minColumn, maxColumn) {
-        // Create a map of occupied slots
-        const occupiedSlots = new Map();
-        this.categories.forEach(category => {
-            const key = `${category.column}-${category.position}`;
-            occupiedSlots.set(key, true);
-        });
-        
-        // Find first available slot in the specified column range
-        for (let column = minColumn; column <= maxColumn; column++) {
-            for (let position = 0; position < 1000; position++) { // Arbitrary limit
-                const key = `${column}-${position}`;
-                if (!occupiedSlots.has(key)) {
-                    return { column, position };
-                }
-            }
-        }
-        
-        // Fallback to first column, position 0
-        return { column: minColumn, position: 0 };
     }
 
     showConfirmation(title, message, onConfirm) {
@@ -1135,6 +1568,7 @@ class LinkShelfDashboard {
         const newConfirmBtn = confirmBtn.cloneNode(true);
         confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
         
+        // Add new event listener
         newConfirmBtn.addEventListener('click', () => {
             onConfirm();
             this.closeModal('confirmation-modal');
@@ -1146,60 +1580,75 @@ class LinkShelfDashboard {
     // Toast Notifications
     showToast(message, type = 'info') {
         const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
+        toast.className = `toast toast-${type}`;
         toast.textContent = message;
         
-        const container = document.getElementById('toast-container');
-        container.appendChild(toast);
+        document.body.appendChild(toast);
         
         // Trigger animation
         setTimeout(() => toast.classList.add('show'), 100);
         
-        // Remove toast after 3 seconds
+        // Remove toast after delay
         setTimeout(() => {
             toast.classList.remove('show');
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
+            setTimeout(() => document.body.removeChild(toast), 300);
         }, 3000);
     }
 
-    // Utility Functions
-    escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+    // Utility methods for grid positioning
+    moveCategoryToPosition(categoryIndex, targetColumn, targetPosition) {
+        const category = this.categories[categoryIndex];
+        if (!category) return;
+        
+        const oldColumn = category.column;
+        const oldPosition = category.position;
+        
+        // Update the category's position
+        category.column = targetColumn;
+        category.position = targetPosition;
+        
+        // Shift other categories in the target column to make room
+        this.categories.forEach((otherCategory, index) => {
+            if (index !== categoryIndex && 
+                otherCategory.column === targetColumn && 
+                otherCategory.position >= targetPosition) {
+                otherCategory.position++;
+            }
+        });
+        
+        // Compact the old column by moving categories up to fill the gap
+        this.categories.forEach(otherCategory => {
+            if (otherCategory.column === oldColumn && 
+                otherCategory.position > oldPosition) {
+                otherCategory.position--;
+            }
+        });
+        
+        this.saveData();
+        this.renderDashboard();
+        this.showToast('Category moved successfully', 'success');
     }
 
-    normalizeUrl(url) {
-        if (!url) return url;
-        
-        // Trim whitespace
-        url = url.trim();
-        
-        // If URL already has a protocol, return as-is
-        if (/^https?:\/\//.test(url)) {
-            return url;
+    findFirstAvailableSlot() {
+        // Create a map of occupied slots
+        const occupiedSlots = new Map();
+        this.categories.forEach(category => {
+            const key = `${category.column}-${category.position}`;
+            occupiedSlots.set(key, true);
+        });
+
+        // Find first available slot, column by column, position by position
+        for (let column = 0; column < this.columnCount; column++) {
+            for (let position = 0; position < 100; position++) { // Arbitrary high limit
+                const key = `${column}-${position}`;
+                if (!occupiedSlots.has(key)) {
+                    return { column, position };
+                }
+            }
         }
         
-        // If URL starts with '//' (protocol-relative), add https:
-        if (url.startsWith('//')) {
-            return 'https:' + url;
-        }
-        
-        // Otherwise, prepend https://
-        return 'https://' + url;
-    }
-    
-    isValidUrl(string) {
-        try {
-            new URL(string);
-            return true;
-        } catch {
-            return false;
-        }
+        // Fallback: last column, next available position
+        return { column: this.columnCount - 1, position: 0 };
     }
 }
 
@@ -1207,6 +1656,10 @@ class LinkShelfDashboard {
 let dashboard;
 document.addEventListener('DOMContentLoaded', () => {
     dashboard = new LinkShelfDashboard();
+    dashboard.init();
+    
     // Make dashboard globally available for any remaining onclick handlers
     window.dashboard = dashboard;
+    
+    console.log('Dashboard initialized successfully.');
 });

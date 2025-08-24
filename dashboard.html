@@ -20,6 +20,11 @@
 
     <!-- Main Dashboard -->
     <main class="dashboard">
+        <!-- Favourites Bar -->
+        <div id="favourites-bar" class="favourites-bar hidden">
+            <!-- Favourites content will be dynamically inserted here -->
+        </div>
+        
         <div id="categories-container" class="categories-container">
             <!-- Categories will be dynamically inserted here -->
         </div>
@@ -30,7 +35,7 @@
         <div class="modal-backdrop"></div>
         <div class="modal-content">
             <div class="modal-header">
-                <h3>Create New Category</h3>
+                <h3 id="create-category-modal-title">Create New Category</h3>
                 <button class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
@@ -41,7 +46,7 @@
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" id="cancel-category">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Create Category</button>
+                        <button type="submit" class="btn btn-primary" id="save-category">Create Category</button>
                     </div>
                 </form>
             </div>
@@ -98,16 +103,34 @@
                 <div class="settings-section">
                     <h4>Layout</h4>
                     <div class="form-group">
-                        <label for="column-count">Number of Columns (1-7)</label>
+                        <label for="column-count">Number of Columns (1-5)</label>
                         <select id="column-count" name="columnCount">
                             <option value="1">1 Column</option>
                             <option value="2">2 Columns</option>
                             <option value="3">3 Columns</option>
                             <option value="4" selected>4 Columns</option>
                             <option value="5">5 Columns</option>
-                            <option value="6">6 Columns</option>
-                            <option value="7">7 Columns</option>
                         </select>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h4>Favourites</h4>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="show-favourites" name="showFavourites" checked>
+                            <label for="show-favourites">Show favourites bar</label>
+                        </div>
+                        <small class="form-help">Display a horizontal bar of favourite links above your categories</small>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h4>Link Behavior</h4>
+                    <div class="form-group">
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="open-links-new-tab" name="openLinksInNewTab" checked>
+                            <label for="open-links-new-tab">Open links in new tab</label>
+                        </div>
+                        <small class="form-help">When enabled, all bookmark and favourite links will open in a new tab</small>
                     </div>
                 </div>
                 <div class="settings-section">
@@ -136,6 +159,40 @@
                     <button type="button" class="btn btn-secondary" id="confirmation-cancel">Cancel</button>
                     <button type="button" class="btn btn-danger" id="confirmation-confirm">Confirm</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <!-- Add/Edit Favourite Modal -->
+    <div id="favourite-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="favourite-modal-title">Add Favourite</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="favourite-form">
+                    <div class="form-group">
+                        <label for="favourite-url">URL</label>
+                        <input type="url" id="favourite-url" name="url" placeholder="https://example.com" required>
+                        <div id="favourite-url-status" class="url-status"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="favourite-title">Title</label>
+                        <input type="text" id="favourite-title" name="title" placeholder="Page title will be fetched automatically">
+                    </div>
+                    <div class="form-group">
+                        <label for="favourite-favicon">Custom Favicon URL (Optional)</label>
+                        <input type="url" id="favourite-favicon" name="favicon" placeholder="https://example.com/favicon.ico">
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancel-favourite">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="save-favourite">Save Favourite</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
