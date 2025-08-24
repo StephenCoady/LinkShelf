@@ -65,6 +65,8 @@ body {
     margin-bottom: 8px;
     padding-bottom: 4px;
     border-bottom: 1px solid #3C4D5E;
+    position: relative;
+    transition: all 0.2s ease;
 }
 
 .favourites-title {
@@ -94,6 +96,33 @@ body {
     background-color: #34C780;
     border-color: #34C780;
     color: white;
+    animation: editModeActive 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes editModeActive {
+    0% {
+        box-shadow: 0 0 0 0 rgba(52, 199, 128, 0.4);
+    }
+    100% {
+        box-shadow: 0 0 0 4px rgba(52, 199, 128, 0);
+    }
+}
+
+/* Add visual indicator to favourites header when in edit mode */
+.favourites-bar.edit-mode .favourites-header {
+    border-bottom-color: #34C780;
+    background-color: rgba(52, 199, 128, 0.05);
+}
+
+.favourites-bar.edit-mode .favourites-header::after {
+    content: '💡 Click on favourites to edit them';
+    position: absolute;
+    right: 90px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.6rem;
+    color: #34C780;
+    font-style: italic;
 }
 
 .favourites-container {
@@ -118,6 +147,22 @@ body {
     transition: all 0.2s ease;
     position: relative;
     user-select: none;
+}
+
+/* Visual feedback in edit mode */
+.favourites-container.edit-mode .favourite-item {
+    animation: editModeIndicator 2s ease-in-out infinite alternate;
+    border-color: #34C780;
+    box-shadow: 0 0 0 1px rgba(52, 199, 128, 0.3);
+}
+
+@keyframes editModeIndicator {
+    0% {
+        box-shadow: 0 0 0 1px rgba(52, 199, 128, 0.3);
+    }
+    100% {
+        box-shadow: 0 0 0 2px rgba(52, 199, 128, 0.6);
+    }
 }
 
 .favourite-item:hover {
@@ -182,6 +227,30 @@ body {
 /* Show actions only in edit mode */
 .favourites-bar.edit-mode .favourite-item .favourite-actions {
     display: flex;
+}
+
+/* Add visual cue that favourite items are clickable in edit mode */
+.favourites-container.edit-mode .favourite-item .favourite-link {
+    cursor: pointer;
+}
+
+/* Add edit indicator on hover in edit mode */
+.favourites-container.edit-mode .favourite-item:hover::before {
+    content: '✏️';
+    position: absolute;
+    top: -8px;
+    left: -8px;
+    font-size: 10px;
+    background-color: #34C780;
+    color: white;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
 
 .favourite-item .action-btn {
@@ -291,28 +360,29 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
     max-width: none;
     margin: 0;
     justify-content: center;
-    /* Default to 4 columns, will be overridden by JavaScript */
-    grid-template-columns: repeat(4, minmax(280px, 340px));
+    /* Dynamic responsive columns */
+    grid-template-columns: repeat(auto-fit, minmax(150px, 300px));
 }
 
+/* Override with specific column counts when set by user */
 .categories-container.columns-1 {
-    grid-template-columns: minmax(280px, 340px);
+    grid-template-columns: minmax(150px, 300px);
 }
 
 .categories-container.columns-2 {
-    grid-template-columns: repeat(2, minmax(280px, 340px));
+    grid-template-columns: repeat(2, minmax(150px, 300px));
 }
 
 .categories-container.columns-3 {
-    grid-template-columns: repeat(3, minmax(280px, 340px));
+    grid-template-columns: repeat(3, minmax(150px, 300px));
 }
 
 .categories-container.columns-4 {
-    grid-template-columns: repeat(4, minmax(280px, 340px));
+    grid-template-columns: repeat(4, minmax(150px, 300px));
 }
 
 .categories-container.columns-5 {
-    grid-template-columns: repeat(5, minmax(280px, 340px));
+    grid-template-columns: repeat(5, minmax(150px, 300px));
 }
 
 
@@ -544,6 +614,13 @@ body.dragging-category .column-drop-zone:hover {
     text-decoration: none;
     color: inherit;
     min-width: 0; /* Allow flex item to shrink */
+    padding-right: 15px; /* Small padding to prevent text from reaching edge */
+    transition: padding-right 0.2s ease;
+}
+
+/* Increase padding when hovering to make room for action buttons */
+.bookmark-item:hover .bookmark-link {
+    padding-right: 45px; /* Reserve space for action buttons when they appear */
 }
 
 .bookmark-favicon {
@@ -1015,8 +1092,49 @@ body.dragging-bookmark .category-body.drag-over::before {
     margin-bottom: 16px;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
+/* Responsive Breakpoints */
+/* Large screens: Allow up to 5 columns if set by user, otherwise auto-fit */
+@media (min-width: 1400px) {
+    .categories-container:not([class*="columns-"]) {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 300px));
+    }
+}
+
+/* Medium-large screens: Max 4 columns, allow columns to shrink */
+@media (max-width: 1399px) and (min-width: 1000px) {
+    .categories-container.columns-5 {
+        grid-template-columns: repeat(4, minmax(180px, 280px)) !important;
+    }
+    .categories-container:not([class*="columns-"]) {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 280px));
+    }
+}
+
+/* Medium screens: Max 3 columns, further shrink */
+@media (max-width: 999px) and (min-width: 750px) {
+    .categories-container.columns-4,
+    .categories-container.columns-5 {
+        grid-template-columns: repeat(3, minmax(160px, 260px)) !important;
+    }
+    .categories-container:not([class*="columns-"]) {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 260px));
+    }
+}
+
+/* Tablet screens: Max 2 columns at minimum width before mobile */
+@media (max-width: 749px) and (min-width: 500px) {
+    .categories-container.columns-3,
+    .categories-container.columns-4,
+    .categories-container.columns-5 {
+        grid-template-columns: repeat(2, minmax(150px, 1fr)) !important;
+    }
+    .categories-container:not([class*="columns-"]) {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
+}
+
+/* Mobile screens: Single column */
+@media (max-width: 499px) {
     .header-content {
         flex-direction: column;
         gap: 10px;
@@ -1031,6 +1149,29 @@ body.dragging-bookmark .category-body.drag-over::before {
     .modal-content {
         margin: 16px;
         width: calc(100% - 32px);
+    }
+    
+    /* Adjust favourites bar for mobile */
+    .favourites-container {
+        justify-content: center;
+    }
+    
+    .favourite-item {
+        min-width: 32px;
+    }
+    
+    /* Adjust edit mode feedback for mobile */
+    .favourites-bar.edit-mode .favourites-header::after {
+        display: none; /* Hide the hint text on mobile - it would overflow */
+    }
+    
+    /* Make edit mode indicator more prominent on mobile */
+    .favourites-container.edit-mode .favourite-item:hover::before {
+        top: -12px;
+        left: -12px;
+        font-size: 12px;
+        width: 20px;
+        height: 20px;
     }
 }
 

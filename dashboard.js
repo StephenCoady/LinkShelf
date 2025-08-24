@@ -164,6 +164,13 @@ class LinkShelfDashboard {
                     this.closeCategoryDropdowns();
                 }
         });
+
+        // Global escape key handler to close modals
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                this.closeAnyOpenModal();
+            }
+        });
     }
 
     attachDynamicEventListeners() {
@@ -732,7 +739,7 @@ class LinkShelfDashboard {
         const fallbackIcon = this.getFallbackIcon();
         
         return `
-            <div class="favourite-item" data-favourite-index="${index}" draggable="true" title="${this.escapeHtml(favourite.title)}">
+            <div class="favourite-item" data-favourite-index="${index}" draggable="true" title="${this.escapeHtml(favourite.url)}">
                 <a href="${this.escapeHtml(favourite.url)}" ${this.openLinksInNewTab ? 'target="_blank"' : ''} class="favourite-link">
                     <img class="favourite-favicon" src="${faviconSrc}" alt="Favicon" data-fallback="${fallbackIcon}">
                 </a>
@@ -792,6 +799,19 @@ class LinkShelfDashboard {
             item.addEventListener('drop', (e) => this.handleFavouriteDrop(e));
         });
 
+        // Allow clicking on favourite items in edit mode to edit them
+        if (this.favouritesEditMode) {
+            document.querySelectorAll('.favourite-item .favourite-link').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const favouriteItem = e.target.closest('.favourite-item');
+                    const favouriteIndex = parseInt(favouriteItem.dataset.favouriteIndex);
+                    this.editFavourite(favouriteIndex);
+                });
+            });
+        }
+
         // Favicon error handling for favourites
         document.querySelectorAll('.favourite-favicon').forEach(img => {
             img.addEventListener('error', (e) => {
@@ -810,7 +830,6 @@ class LinkShelfDashboard {
         
         document.getElementById('favourite-modal-title').textContent = 'Add Favourite';
         document.getElementById('favourite-url').value = '';
-        document.getElementById('favourite-title').value = '';
         document.getElementById('favourite-favicon').value = '';
         document.getElementById('save-favourite').textContent = 'Save Favourite';
         
@@ -825,7 +844,6 @@ class LinkShelfDashboard {
         
         document.getElementById('favourite-modal-title').textContent = 'Edit Favourite';
         document.getElementById('favourite-url').value = favourite.url;
-        document.getElementById('favourite-title').value = favourite.title;
         document.getElementById('favourite-favicon').value = '';
         document.getElementById('save-favourite').textContent = 'Update Favourite';
         
@@ -837,7 +855,7 @@ class LinkShelfDashboard {
         const favourite = this.favourites[favouriteIndex];
         this.showConfirmation(
             'Delete Favourite',
-            `Are you sure you want to delete "${favourite.title}"?`,
+            `Are you sure you want to delete the favourite for "${favourite.url}"?`,
             () => {
                 this.favourites.splice(favouriteIndex, 1);
                 this.saveData();
@@ -852,7 +870,6 @@ class LinkShelfDashboard {
         
         const formData = new FormData(e.target);
         const url = formData.get('url').trim();
-        const title = formData.get('title').trim();
         const customFaviconUrl = formData.get('favicon').trim();
         
         if (!url) {
@@ -868,46 +885,28 @@ class LinkShelfDashboard {
             const normalizedUrl = this.normalizeUrl(url);
             
             let faviconData = null;
-            let finalTitle = title;
             
-            // If no custom title provided, try to fetch it
-            if (!finalTitle) {
-                try {
-                    const response = await fetch(normalizedUrl);
-                    const text = await response.text();
-                    const titleMatch = text.match(/<title[^>]*>([^<]*)<\/title>/i);
-                    if (titleMatch) {
-                        finalTitle = titleMatch[1].trim();
-                    }
-                } catch (error) {
-                    console.warn('Could not fetch title:', error);
-                }
-            }
-            
-            // Use custom favicon if provided, otherwise try to fetch
+            // Use custom favicon if provided, otherwise try to fetch from domain
             if (customFaviconUrl) {
                 try {
                     faviconData = await this.fetchFaviconAsDataUrl(customFaviconUrl);
                 } catch (error) {
                     console.warn('Could not fetch custom favicon:', error);
                 }
-            } else {
+            }
+            
+            // If no custom favicon or it failed, try domain favicon
+            if (!faviconData) {
                 try {
                     faviconData = await this.fetchFaviconAsDataUrl(normalizedUrl);
                 } catch (error) {
-                    console.warn('Could not fetch favicon:', error);
+                    console.warn('Could not fetch domain favicon:', error);
                 }
-            }
-            
-            // Fallback title if still empty
-            if (!finalTitle) {
-                finalTitle = normalizedUrl;
             }
             
             const favouriteData = {
                 id: this.generateId(),
                 url: normalizedUrl,
-                title: finalTitle,
                 faviconData: faviconData
             };
             
@@ -953,9 +952,9 @@ class LinkShelfDashboard {
         this.renderDashboard();
         
         if (this.favouritesEditMode) {
-            this.showToast('Favourites edit mode enabled', 'info');
+            this.showToast('Edit mode enabled - Click on favourites to edit, use action buttons to delete', 'info');
         } else {
-            this.showToast('Favourites edit mode disabled', 'info');
+            this.showToast('Edit mode disabled', 'info');
         }
     }
 
@@ -1003,7 +1002,6 @@ class LinkShelfDashboard {
     async handleFavouriteUrlInput(e) {
         const url = e.target.value.trim();
         const statusDiv = document.getElementById('favourite-url-status');
-        const titleInput = document.getElementById('favourite-title');
         
         if (!url) {
             statusDiv.textContent = '';
@@ -1017,15 +1015,8 @@ class LinkShelfDashboard {
         try {
             const normalizedUrl = this.normalizeUrl(url);
             
-            // Try to fetch title if title field is empty
-            if (!titleInput.value.trim()) {
-                const response = await fetch(normalizedUrl);
-                const text = await response.text();
-                const titleMatch = text.match(/<title[^>]*>([^<]*)<\/title>/i);
-                if (titleMatch) {
-                    titleInput.value = titleMatch[1].trim();
-                }
-            }
+            // Just check if URL is accessible, no title fetching needed
+            await fetch(normalizedUrl);
             
             statusDiv.textContent = '✓ URL is accessible';
             statusDiv.className = 'url-status success';
@@ -1557,6 +1548,14 @@ class LinkShelfDashboard {
     closeModal(modalId) {
         document.getElementById(modalId).classList.add('hidden');
         document.body.style.overflow = '';
+    }
+
+    closeAnyOpenModal() {
+        // Find any open modal and close it
+        const openModal = document.querySelector('.modal:not(.hidden)');
+        if (openModal) {
+            this.closeModal(openModal.id);
+        }
     }
 
     showConfirmation(title, message, onConfirm) {
