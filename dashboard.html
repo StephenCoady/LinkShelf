@@ -10,13 +10,29 @@
     <!-- Header -->
     <header class="header">
         <div class="header-content">
-            <h1 class="logo">LinkShelf</h1>
+            <div class="header-left">
+                <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Inbox">
+                    ☰
+                </button>
+                <h1 class="logo">LinkShelf</h1>
+            </div>
             <div class="header-actions">
                 <button id="create-category-btn" class="btn btn-primary">+ Create Category</button>
                 <button id="settings-btn" class="btn btn-secondary">⚙️ Settings</button>
             </div>
         </div>
     </header>
+
+    <!-- Inbox Sidebar -->
+    <aside id="inbox-sidebar" class="inbox-sidebar">
+        <div class="inbox-header">
+            <h3>Inbox</h3>
+            <span class="inbox-count" id="inbox-count">0</span>
+        </div>
+        <div class="inbox-content" id="inbox-content">
+            <!-- Inbox items will be dynamically inserted here -->
+        </div>
+    </aside>
 
     <!-- Main Dashboard -->
     <main class="dashboard">

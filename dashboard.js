@@ -3,6 +3,7 @@ class LinkShelfDashboard {
     constructor() {
         this.categories = [];
         this.favourites = [];
+        this.inbox = [];
         this.columnCount = 3;
         this.showFavourites = true;
         this.favouritesEditMode = false;
@@ -15,6 +16,7 @@ class LinkShelfDashboard {
         this.editingFavouriteIndex = null;
         this.draggedElement = null;
         this.draggedType = null;
+        this.sidebarOpen = false;
     }
 
     // Initialize the dashboard
@@ -32,12 +34,14 @@ class LinkShelfDashboard {
                 'linkshelf_column_count',
                 'linkshelf_favourites',
                 'linkshelf_show_favourites',
-                'linkshelf_open_links_new_tab'
+                'linkshelf_open_links_new_tab',
+                'linkshelf_inbox'
             ]);
             
             this.categories = result.linkshelf_categories || [];
             this.columnCount = result.linkshelf_column_count || 3;
             this.favourites = result.linkshelf_favourites || [];
+            this.inbox = result.linkshelf_inbox || [];
             this.showFavourites = result.linkshelf_show_favourites !== false; // Default to true
             this.openLinksInNewTab = result.linkshelf_open_links_new_tab !== false; // Default to true
             
@@ -94,6 +98,7 @@ class LinkShelfDashboard {
                 'linkshelf_categories': this.categories,
                 'linkshelf_column_count': this.columnCount,
                 'linkshelf_favourites': this.favourites,
+                'linkshelf_inbox': this.inbox,
                 'linkshelf_show_favourites': this.showFavourites,
                 'linkshelf_open_links_new_tab': this.openLinksInNewTab
             });
@@ -111,6 +116,7 @@ class LinkShelfDashboard {
         // Header buttons
         document.getElementById('create-category-btn').addEventListener('click', () => this.openCreateCategoryModal());
         document.getElementById('settings-btn').addEventListener('click', () => this.openSettingsModal());
+        document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
 
         // Category modal
         document.getElementById('create-category-form').addEventListener('submit', (e) => this.handleCategoryFormSubmit(e));
@@ -217,6 +223,9 @@ class LinkShelfDashboard {
 
     // UI Rendering
     renderDashboard() {
+        // Render inbox sidebar
+        this.renderInbox();
+        
         // Render favourites bar
         this.renderFavouritesBar();
         
@@ -256,6 +265,7 @@ class LinkShelfDashboard {
         this.setupCategoryEventListeners();
         this.setupColumnDropZones();
         this.setupBookmarkDragDrop();
+        this.setupInboxDropZone();
         this.attachDynamicEventListeners();
     }
 
@@ -564,9 +574,15 @@ class LinkShelfDashboard {
             };
             
             if (this.currentEditingBookmark !== null) {
-                // Update existing bookmark
-                this.categories[this.currentEditingCategory].bookmarks[this.currentEditingBookmark] = bookmarkData;
-                this.showToast('Bookmark updated successfully', 'success');
+                if (this.currentEditingCategory === 'inbox') {
+                    // Update existing inbox item
+                    this.inbox[this.currentEditingBookmark] = bookmarkData;
+                    this.showToast('Inbox item updated successfully', 'success');
+                } else {
+                    // Update existing bookmark
+                    this.categories[this.currentEditingCategory].bookmarks[this.currentEditingBookmark] = bookmarkData;
+                    this.showToast('Bookmark updated successfully', 'success');
+                }
             } else {
                 // Add new bookmark
                 this.categories[this.currentEditingCategory].bookmarks.push(bookmarkData);
@@ -694,6 +710,338 @@ class LinkShelfDashboard {
         } else {
             this.showToast('Bookmark moved to another category', 'success');
         }
+    }
+
+    // Inbox Management
+    toggleSidebar() {
+        this.sidebarOpen = !this.sidebarOpen;
+        const sidebar = document.getElementById('inbox-sidebar');
+        const toggleBtn = document.getElementById('sidebar-toggle');
+        
+        if (this.sidebarOpen) {
+            sidebar.classList.add('open');
+            toggleBtn.classList.add('active');
+            document.body.classList.add('sidebar-open');
+        } else {
+            sidebar.classList.remove('open');
+            toggleBtn.classList.remove('active');
+            document.body.classList.remove('sidebar-open');
+        }
+    }
+
+    renderInbox() {
+        const inboxContent = document.getElementById('inbox-content');
+        const inboxCount = document.getElementById('inbox-count');
+        
+        // Update count
+        inboxCount.textContent = this.inbox.length;
+        
+        if (this.inbox.length === 0) {
+            inboxContent.innerHTML = `
+                <div class="empty-inbox">
+                    <div class="empty-inbox-icon">📥</div>
+                    <div class="empty-inbox-text">
+                        Your inbox is empty.<br>
+                        Click the extension icon on any website to add it here.
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        inboxContent.innerHTML = this.inbox.map((item, index) => 
+            this.renderInboxItem(item, index)
+        ).join('');
+        
+        this.setupInboxEventListeners();
+    }
+
+    renderInboxItem(item, index) {
+        const faviconSrc = item.faviconData || this.getFallbackIcon();
+        const fallbackIcon = this.getFallbackIcon();
+        
+        return `
+            <div class="inbox-item" data-inbox-index="${index}" draggable="true">
+                <a href="${this.escapeHtml(item.url)}" ${this.openLinksInNewTab ? 'target="_blank"' : ''} class="inbox-link">
+                    <img class="inbox-favicon" src="${faviconSrc}" alt="Favicon" data-fallback="${fallbackIcon}">
+                    <span class="inbox-title">${this.escapeHtml(item.name)}</span>
+                </a>
+                <div class="inbox-actions">
+                    <button class="inbox-action-btn inbox-edit-btn" data-inbox-index="${index}" title="Edit Bookmark">
+                        ✏️
+                    </button>
+                    <button class="inbox-action-btn inbox-delete-btn" data-inbox-index="${index}" title="Delete Bookmark">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    setupInboxEventListeners() {
+        // Edit buttons
+        document.querySelectorAll('.inbox-edit-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const inboxIndex = parseInt(e.target.dataset.inboxIndex);
+                this.editInboxItem(inboxIndex);
+            });
+        });
+
+        // Delete buttons
+        document.querySelectorAll('.inbox-delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const inboxIndex = parseInt(e.target.dataset.inboxIndex);
+                this.deleteInboxItem(inboxIndex);
+            });
+        });
+
+        // Drag and drop
+        document.querySelectorAll('.inbox-item').forEach(item => {
+            item.addEventListener('dragstart', (e) => this.handleInboxDragStart(e));
+            item.addEventListener('dragend', (e) => this.handleInboxDragEnd(e));
+        });
+
+        // Favicon error handling
+        document.querySelectorAll('.inbox-favicon').forEach(img => {
+            img.addEventListener('error', (e) => {
+                const fallbackIcon = e.target.dataset.fallback;
+                if (fallbackIcon && e.target.src !== fallbackIcon) {
+                    e.target.src = fallbackIcon;
+                }
+            });
+        });
+    }
+
+    async addToInbox(url, name = null, faviconData = null) {
+        // Auto-generate name from URL if not provided
+        if (!name) {
+            name = new URL(url).hostname;
+        }
+        
+        // Check if item already exists in inbox
+        const exists = this.inbox.some(item => item.url === url);
+        if (exists) {
+            this.showToast('Link already in inbox', 'info');
+            return;
+        }
+        
+        const inboxItem = {
+            id: this.generateId(),
+            name: name,
+            url: url,
+            faviconData: faviconData
+        };
+        
+        this.inbox.push(inboxItem);
+        await this.saveData();
+        this.renderInbox();
+        this.showToast('Added to inbox', 'success');
+    }
+
+    editInboxItem(inboxIndex) {
+        const item = this.inbox[inboxIndex];
+        this.currentEditingBookmark = inboxIndex;
+        this.currentEditingCategory = 'inbox';
+        
+        document.getElementById('bookmark-modal-title').textContent = 'Edit Inbox Item';
+        document.getElementById('bookmark-url').value = item.url;
+        document.getElementById('bookmark-name').value = item.name;
+        document.getElementById('bookmark-favicon-url').value = '';
+        document.getElementById('save-bookmark').textContent = 'Update Item';
+        
+        // Show preview with cached favicon
+        const preview = document.querySelector('.bookmark-preview');
+        const favicon = document.getElementById('bookmark-favicon');
+        const titlePreview = document.getElementById('bookmark-title-preview');
+        
+        favicon.src = item.faviconData || this.getFallbackIcon();
+        titlePreview.textContent = item.name;
+        preview.classList.add('visible');
+        
+        this.openModal('bookmark-modal');
+    }
+
+    deleteInboxItem(inboxIndex) {
+        const item = this.inbox[inboxIndex];
+        
+        this.showConfirmation(
+            'Delete Inbox Item',
+            `Are you sure you want to delete "${item.name}"?`,
+            () => {
+                this.inbox.splice(inboxIndex, 1);
+                this.saveData();
+                this.renderInbox();
+                this.showToast('Inbox item deleted successfully', 'success');
+            }
+        );
+    }
+
+    handleInboxDragStart(e) {
+        const inboxItem = e.target.closest('.inbox-item');
+        this.draggedElement = inboxItem;
+        this.draggedType = 'inbox';
+        inboxItem.classList.add('dragging');
+        document.body.classList.add('dragging-inbox');
+    }
+
+    handleInboxDragEnd(e) {
+        const inboxItem = e.target.closest('.inbox-item');
+        inboxItem.classList.remove('dragging');
+        document.body.classList.remove('dragging-inbox');
+        this.draggedElement = null;
+        this.draggedType = null;
+        
+        // Clean up all drag-over visual feedback
+        document.querySelectorAll('.bookmark-item.drag-over-top, .bookmark-item.drag-over-bottom').forEach(item => {
+            item.classList.remove('drag-over-top', 'drag-over-bottom');
+        });
+        document.querySelectorAll('.bookmarks-list.drag-over-empty').forEach(list => {
+            list.classList.remove('drag-over-empty');
+        });
+        document.querySelectorAll('.category-body.drag-over').forEach(body => {
+            body.classList.remove('drag-over');
+        });
+    }
+
+    async moveInboxItemToCategory(inboxIndex, targetCategoryIndex) {
+        // Use the more precise positioning version
+        const targetPosition = this.categories[targetCategoryIndex].bookmarks.length;
+        return this.moveInboxItemToCategoryAtPosition(inboxIndex, targetCategoryIndex, targetPosition);
+    }
+
+    async moveInboxItemToCategoryAtPosition(inboxIndex, targetCategoryIndex, targetPosition) {
+        const inboxItem = this.inbox[inboxIndex];
+        if (!inboxItem) {
+            console.error('Inbox item not found at index', inboxIndex);
+            return;
+        }
+
+        // Create bookmark data from inbox item
+        const bookmarkData = {
+            id: inboxItem.id,
+            name: inboxItem.name,
+            url: inboxItem.url,
+            faviconData: inboxItem.faviconData
+        };
+
+        // Insert at specific position in target category
+        this.categories[targetCategoryIndex].bookmarks.splice(targetPosition, 0, bookmarkData);
+
+        // Remove from inbox
+        this.inbox.splice(inboxIndex, 1);
+
+        await this.saveData();
+        this.renderDashboard();
+        this.showToast(`Moved "${inboxItem.name}" to ${this.categories[targetCategoryIndex].name}`, 'success');
+    }
+
+    async moveBookmarkToInbox(categoryIndex, bookmarkIndex) {
+        console.log(`moveBookmarkToInbox called: categoryIndex=${categoryIndex}, bookmarkIndex=${bookmarkIndex}`);
+        console.log(`Category has ${this.categories[categoryIndex].bookmarks.length} bookmarks before removal`);
+        
+        const bookmark = this.categories[categoryIndex].bookmarks[bookmarkIndex];
+        if (!bookmark) {
+            console.error('Bookmark not found at position');
+            return;
+        }
+
+        console.log(`Moving bookmark: "${bookmark.name}" from position ${bookmarkIndex}`);
+
+        // Check if item already exists in inbox
+        const exists = this.inbox.some(item => item.url === bookmark.url);
+        if (exists) {
+            this.showToast('Link already in inbox', 'info');
+            return;
+        }
+
+        // Create inbox item from bookmark
+        const inboxItem = {
+            id: bookmark.id,
+            name: bookmark.name,
+            url: bookmark.url,
+            faviconData: bookmark.faviconData
+        };
+
+        // Add to inbox
+        this.inbox.push(inboxItem);
+
+        // Remove from category - only this specific bookmark
+        console.log(`About to splice: removing 1 item at index ${bookmarkIndex}`);
+        const removed = this.categories[categoryIndex].bookmarks.splice(bookmarkIndex, 1);
+        console.log(`Removed items:`, removed);
+        console.log(`Category now has ${this.categories[categoryIndex].bookmarks.length} bookmarks after removal`);
+
+        await this.saveData();
+        this.renderDashboard();
+        this.showToast(`Moved "${bookmark.name}" to inbox`, 'success');
+    }
+
+    setupInboxDropZone() {
+        const inboxContent = document.getElementById('inbox-content');
+        if (!inboxContent) return;
+
+        // Check if we've already set up listeners to prevent duplicates
+        if (inboxContent.hasAttribute('data-inbox-listeners-setup')) {
+            return;
+        }
+
+        // Mark as having listeners setup
+        inboxContent.setAttribute('data-inbox-listeners-setup', 'true');
+
+        // Bind methods to this instance
+        this.boundHandleInboxDragOver = this.boundHandleInboxDragOver || ((e) => this.handleInboxDragOver(e));
+        this.boundHandleInboxDragLeave = this.boundHandleInboxDragLeave || ((e) => this.handleInboxDragLeave(e));
+        this.boundHandleInboxDrop = this.boundHandleInboxDrop || ((e) => this.handleInboxDrop(e));
+
+        // Add the event listeners
+        inboxContent.addEventListener('dragover', this.boundHandleInboxDragOver);
+        inboxContent.addEventListener('dragleave', this.boundHandleInboxDragLeave);
+        inboxContent.addEventListener('drop', this.boundHandleInboxDrop);
+    }
+
+    handleInboxDragOver(e) {
+        if (this.draggedType !== 'bookmark') return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+        
+        const inboxContent = e.target.closest('#inbox-content');
+        if (inboxContent) {
+            inboxContent.classList.add('drag-over');
+        }
+    }
+
+    handleInboxDragLeave(e) {
+        const inboxContent = e.target.closest('#inbox-content');
+        if (!inboxContent) return;
+        
+        // Only remove classes if we're leaving the element entirely
+        if (!inboxContent.contains(e.relatedTarget)) {
+            inboxContent.classList.remove('drag-over');
+        }
+    }
+
+    handleInboxDrop(e) {
+        console.log('handleInboxDrop called');
+        if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const inboxContent = e.target.closest('#inbox-content');
+        if (!inboxContent) return;
+
+        inboxContent.classList.remove('drag-over');
+
+        // Get source information
+        const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
+        const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
+        
+        console.log('About to call moveBookmarkToInbox from handleInboxDrop');
+        this.moveBookmarkToInbox(sourceCategoryIndex, sourceBookmarkIndex);
     }
 
     // Favourites Rendering
@@ -1313,10 +1661,13 @@ class LinkShelfDashboard {
         document.querySelectorAll('.category-body.drag-over').forEach(body => {
             body.classList.remove('drag-over');
         });
+        document.querySelectorAll('#inbox-content.drag-over').forEach(inbox => {
+            inbox.classList.remove('drag-over');
+        });
     }
 
     handleBookmarkDragOver(e) {
-        if (this.draggedType !== 'bookmark') return;
+        if (this.draggedType !== 'bookmark' && this.draggedType !== 'inbox') return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
@@ -1346,16 +1697,13 @@ class LinkShelfDashboard {
     }
 
     handleBookmarkDrop(e) {
-        if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
+        if (!this.draggedElement) return;
         e.preventDefault();
         e.stopPropagation();
         
         const targetBookmark = e.target.closest('.bookmark-item');
         if (!targetBookmark || targetBookmark === this.draggedElement) return;
         
-        // Get source and target information
-        const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
-        const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
         const targetCategoryIndex = parseInt(targetBookmark.dataset.categoryIndex);
         const targetBookmarkIndex = parseInt(targetBookmark.dataset.bookmarkIndex);
         
@@ -1365,11 +1713,21 @@ class LinkShelfDashboard {
         const insertAfter = e.clientY > midY;
         const targetPosition = insertAfter ? targetBookmarkIndex + 1 : targetBookmarkIndex;
         
-        this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+        if (this.draggedType === 'bookmark') {
+            // Get source bookmark information
+            const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
+            const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
+            
+            this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+        } else if (this.draggedType === 'inbox') {
+            // Handle inbox item drop at specific position
+            const inboxIndex = parseInt(this.draggedElement.dataset.inboxIndex);
+            this.moveInboxItemToCategoryAtPosition(inboxIndex, targetCategoryIndex, targetPosition);
+        }
     }
 
     handleBookmarksListDragOver(e) {
-        if (this.draggedType !== 'bookmark') return;
+        if (this.draggedType !== 'bookmark' && this.draggedType !== 'inbox') return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
@@ -1381,11 +1739,17 @@ class LinkShelfDashboard {
     }
 
     handleBookmarksListDragLeave(e) {
-        // Handle drag leave for bookmark lists
+        const bookmarksList = e.target.closest('.bookmarks-list');
+        if (!bookmarksList) return;
+        
+        // Only remove classes if we're leaving the element entirely
+        if (!bookmarksList.contains(e.relatedTarget)) {
+            bookmarksList.classList.remove('drag-over-empty');
+        }
     }
 
     handleBookmarksListDrop(e) {
-        if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
+        if (!this.draggedElement) return;
         e.preventDefault();
         e.stopPropagation();
         
@@ -1395,18 +1759,24 @@ class LinkShelfDashboard {
         const targetCategoryIndex = parseInt(bookmarksList.dataset.categoryIndex || 
                                            bookmarksList.closest('.category-column').dataset.categoryIndex);
         
-        // Get source information
-        const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
-        const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
-        
-        // Drop at the end of the target category
-        const targetPosition = this.categories[targetCategoryIndex].bookmarks.length;
-        
-        this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+        if (this.draggedType === 'bookmark') {
+            // Get source information
+            const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
+            const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
+            
+            // Drop at the end of the target category
+            const targetPosition = this.categories[targetCategoryIndex].bookmarks.length;
+            
+            this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+        } else if (this.draggedType === 'inbox') {
+            // Handle inbox item drop
+            const inboxIndex = parseInt(this.draggedElement.dataset.inboxIndex);
+            this.moveInboxItemToCategory(inboxIndex, targetCategoryIndex);
+        }
     }
 
     handleCategoryBodyDragOver(e) {
-        if (this.draggedType !== 'bookmark') return;
+        if (this.draggedType !== 'bookmark' && this.draggedType !== 'inbox') return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
@@ -1418,11 +1788,17 @@ class LinkShelfDashboard {
     }
 
     handleCategoryBodyDragLeave(e) {
-        // Handle drag leave for category bodies
+        const categoryBody = e.target.closest('.category-body');
+        if (!categoryBody) return;
+        
+        // Only remove classes if we're leaving the element entirely
+        if (!categoryBody.contains(e.relatedTarget)) {
+            categoryBody.classList.remove('drag-over');
+        }
     }
 
     handleCategoryBodyDrop(e) {
-        if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
+        if (!this.draggedElement) return;
         e.preventDefault();
         e.stopPropagation();
         
@@ -1431,14 +1807,20 @@ class LinkShelfDashboard {
         
         const targetCategoryIndex = parseInt(categoryBody.closest('.category-column').dataset.categoryIndex);
         
-        // Get source information
-        const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
-        const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
-        
-        // Drop at the end of the target category
-        const targetPosition = this.categories[targetCategoryIndex].bookmarks.length;
-        
-        this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+        if (this.draggedType === 'bookmark') {
+            // Get source information
+            const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
+            const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
+            
+            // Drop at the end of the target category
+            const targetPosition = this.categories[targetCategoryIndex].bookmarks.length;
+            
+            this.moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition);
+        } else if (this.draggedType === 'inbox') {
+            // Handle inbox item drop
+            const inboxIndex = parseInt(this.draggedElement.dataset.inboxIndex);
+            this.moveInboxItemToCategory(inboxIndex, targetCategoryIndex);
+        }
     }
 
     // Settings and Import/Export
