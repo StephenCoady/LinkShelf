@@ -582,51 +582,73 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
 }
 
 .categories-container {
-    display: grid;
-    gap: 8px;
+    display: flex;
+    gap: 0;
     min-height: 400px;
-    padding-bottom: 80px;
-    max-width: none;
-    margin: 0;
-    justify-content: center;
-    /* Dynamic responsive columns */
-    grid-template-columns: repeat(auto-fit, minmax(150px, 300px));
+    margin: 16px auto;
+    max-width: 1400px;
+    background-color: #1D252E;
+    border: 2px solid #3C4D5E;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    overflow-x: auto;
 }
 
-/* Override with specific column counts when set by user */
+/* Board columns - equal height, no gaps */
 .categories-container.columns-1 {
-    grid-template-columns: minmax(150px, 300px);
+    max-width: 350px;
 }
 
 .categories-container.columns-2 {
-    grid-template-columns: repeat(2, minmax(150px, 300px));
+    max-width: 700px;
 }
 
 .categories-container.columns-3 {
-    grid-template-columns: repeat(3, minmax(150px, 300px));
+    max-width: 1050px;
 }
 
 .categories-container.columns-4 {
-    grid-template-columns: repeat(4, minmax(150px, 300px));
+    max-width: 1400px;
 }
 
 .categories-container.columns-5 {
-    grid-template-columns: repeat(5, minmax(150px, 300px));
+    max-width: 1400px;
 }
 
 
 
-/* Grid column wrapper for vertical category flow */
+/* Board column wrapper - equal height columns that touch */
 .grid-column {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    min-height: 160px;
+    flex: 1 1 0;
+    min-width: 250px;
+    max-width: 350px;
+    min-height: 360px;
+    background-color: #2A3642;
+    border-right: 1px solid #3C4D5E;
+    padding: 12px;
+    position: relative;
+}
+
+.grid-column:last-child {
+    border-right: none;
+}
+
+.grid-column:first-child {
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+.grid-column:last-child {
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
 }
 
 /* Column drop zones */
 .column-drop-zone {
-    height: 8px;
+    height: 0px;
     border: 2px dashed transparent;
     border-radius: 5px;
     display: flex;
@@ -636,7 +658,6 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
     font-size: 0.6rem;
     opacity: 0;
     transition: all 0.2s ease;
-    margin: 4px 0;
     position: relative;
 }
 
@@ -669,24 +690,28 @@ body.dragging-category .column-drop-zone:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 80px;
+    height: 120px;
     color: #8B95A1;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     text-align: center;
-    border: 1px dashed #4A5F73;
-    border-radius: 6px;
-    background-color: rgba(42, 54, 66, 0.3);
+    border: 2px dashed #4A5F73;
+    border-radius: 8px;
+    background-color: rgba(52, 199, 128, 0.05);
+    margin: auto 0;
 }
 
-/* Category Columns */
+/* Category Columns - cards within board columns */
 .category-column {
-    background-color: #2A3642;
-    border: 1px solid #3C4D5E;
-    border-radius: 6px;
+    background-color: #364554;
+    border: 1px solid #4A5F73;
+    border-radius: 8px;
     width: 100%;
+    min-width: 0; /* Allow shrinking for text truncation */
     transition: all 0.2s ease;
     position: relative;
     z-index: 1;
+    margin-bottom: 0px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .category-column.dropdown-open {
@@ -714,6 +739,8 @@ body.dragging-category .column-drop-zone:hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0; /* Allow shrinking for text truncation */
+    max-width: 100%; /* Ensure truncation works */
 }
 
 .category-actions {
@@ -866,6 +893,7 @@ body.dragging-category .column-drop-zone:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0; /* Allow flex item to shrink */
+    max-width: 100%; /* Ensure truncation works */
 }
 
 .bookmark-actions {
@@ -1350,11 +1378,15 @@ body.dragging-inbox .bookmarks-list.drag-over-empty {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: 60vh;
+    min-height: 400px;
     width: 100%;
     text-align: center;
     color: #8B95A1;
-    grid-column: 1 / -1;
+    background-color: #2A3642;
+    border-radius: 8px;
+    border: 2px dashed #4A5F73;
+    margin: 16px auto;
+    max-width: 600px;
 }
 
 .empty-dashboard h2 {
@@ -1397,19 +1429,23 @@ body.dragging-inbox .bookmarks-list.drag-over-empty {
     }
 }
 
-/* Tablet screens: Max 2 columns at minimum width before mobile */
+    /* Tablet screens: Adjust board for smaller screens */
 @media (max-width: 749px) and (min-width: 500px) {
-    .categories-container.columns-3,
-    .categories-container.columns-4,
-    .categories-container.columns-5 {
-        grid-template-columns: repeat(2, minmax(150px, 1fr)) !important;
+    .categories-container {
+        padding: 12px;
+        min-height: 400px;
+        max-width: 90%;
     }
-    .categories-container:not([class*="columns-"]) {
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    
+    .grid-column {
+        min-height: 360px;
+        padding: 8px;
+        min-width: 200px;
+        max-width: 300px;
     }
 }
 
-/* Mobile screens: Single column */
+/* Mobile screens: Single column board */
 @media (max-width: 499px) {
     .header-content {
         flex-direction: column;
@@ -1418,8 +1454,32 @@ body.dragging-inbox .bookmarks-list.drag-over-empty {
     }
     
     .categories-container {
-        grid-template-columns: 1fr !important;
+        flex-direction: column !important;
         padding: 8px;
+        min-height: 300px;
+        margin: 8px;
+        max-width: none;
+    }
+    
+    .grid-column {
+        border-right: none;
+        border-bottom: 1px solid #3C4D5E;
+        border-radius: 0;
+        min-height: 200px;
+        padding: 8px;
+    }
+    
+    .grid-column:first-child {
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+        border-bottom-left-radius: 0;
+    }
+    
+    .grid-column:last-child {
+        border-bottom-left-radius: 6px;
+        border-bottom-right-radius: 6px;
+        border-top-right-radius: 0;
+        border-bottom: none;
     }
     
     .modal-content {

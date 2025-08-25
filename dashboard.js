@@ -940,16 +940,11 @@ class LinkShelfDashboard {
     }
 
     async moveBookmarkToInbox(categoryIndex, bookmarkIndex) {
-        console.log(`moveBookmarkToInbox called: categoryIndex=${categoryIndex}, bookmarkIndex=${bookmarkIndex}`);
-        console.log(`Category has ${this.categories[categoryIndex].bookmarks.length} bookmarks before removal`);
-        
         const bookmark = this.categories[categoryIndex].bookmarks[bookmarkIndex];
         if (!bookmark) {
             console.error('Bookmark not found at position');
             return;
         }
-
-        console.log(`Moving bookmark: "${bookmark.name}" from position ${bookmarkIndex}`);
 
         // Check if item already exists in inbox
         const exists = this.inbox.some(item => item.url === bookmark.url);
@@ -969,11 +964,8 @@ class LinkShelfDashboard {
         // Add to inbox
         this.inbox.push(inboxItem);
 
-        // Remove from category - only this specific bookmark
-        console.log(`About to splice: removing 1 item at index ${bookmarkIndex}`);
-        const removed = this.categories[categoryIndex].bookmarks.splice(bookmarkIndex, 1);
-        console.log(`Removed items:`, removed);
-        console.log(`Category now has ${this.categories[categoryIndex].bookmarks.length} bookmarks after removal`);
+        // Remove from category
+        this.categories[categoryIndex].bookmarks.splice(bookmarkIndex, 1);
 
         await this.saveData();
         this.renderDashboard();
@@ -1026,7 +1018,6 @@ class LinkShelfDashboard {
     }
 
     handleInboxDrop(e) {
-        console.log('handleInboxDrop called');
         if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
         e.preventDefault();
         e.stopPropagation();
@@ -1040,7 +1031,6 @@ class LinkShelfDashboard {
         const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
         const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
         
-        console.log('About to call moveBookmarkToInbox from handleInboxDrop');
         this.moveBookmarkToInbox(sourceCategoryIndex, sourceBookmarkIndex);
     }
 
