@@ -22,6 +22,7 @@ class LinkShelfDashboard {
     // Initialize the dashboard
     async init() {
         await this.loadData();
+        this.setupStorageListener();
         this.setupEventListeners();
         this.renderDashboard();
     }
@@ -81,6 +82,32 @@ class LinkShelfDashboard {
                 if (!category.bookmarks) {
                     category.bookmarks = [];
                     needsSave = true;
+                }
+                
+                // Migration for bookmarks - add customFaviconUrl field if missing
+                if (category.bookmarks) {
+                    category.bookmarks.forEach(bookmark => {
+                        if (bookmark.customFaviconUrl === undefined) {
+                            bookmark.customFaviconUrl = null;
+                            needsSave = true;
+                        }
+                    });
+                }
+        });
+        
+        // Migration for favourites - add customFaviconUrl field if missing
+        this.favourites.forEach(favourite => {
+            if (favourite.customFaviconUrl === undefined) {
+                favourite.customFaviconUrl = null;
+                needsSave = true;
+            }
+        });
+        
+        // Migration for inbox items - add customFaviconUrl field if missing
+        this.inbox.forEach(inboxItem => {
+            if (inboxItem.customFaviconUrl === undefined) {
+                inboxItem.customFaviconUrl = null;
+                needsSave = true;
             }
         });
         
@@ -90,6 +117,19 @@ class LinkShelfDashboard {
         } catch (error) {
             console.error('Error loading data:', error);
         }
+    }
+
+    // Set up listener for storage changes to auto-refresh inbox
+    setupStorageListener() {
+        chrome.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName === 'local' && changes.linkshelf_inbox) {
+                // Update local inbox data with the new value
+                this.inbox = changes.linkshelf_inbox.newValue || [];
+                // Re-render the inbox to show updated content
+                this.renderInbox();
+                console.log('Inbox auto-refreshed with new data');
+            }
+        });
     }
 
     async saveData() {
@@ -141,6 +181,7 @@ class LinkShelfDashboard {
         // Favourite modal
         document.getElementById('favourite-form').addEventListener('submit', (e) => this.handleSaveFavourite(e));
         document.getElementById('cancel-favourite').addEventListener('click', () => this.closeModal('favourite-modal'));
+        document.getElementById('delete-favourite').addEventListener('click', () => this.handleDeleteFavouriteFromModal());
         document.getElementById('favourite-url').addEventListener('input', (e) => this.handleFavouriteUrlInputDebounced(e));
         document.getElementById('favourite-url').addEventListener('blur', (e) => this.handleFavouriteUrlInputImmediate(e));
         document.getElementById('favourite-favicon').addEventListener('input', (e) => this.handleFavouriteFaviconUrlInput(e));
@@ -335,7 +376,15 @@ class LinkShelfDashboard {
     }
 
     renderBookmark(bookmark, categoryIndex, bookmarkIndex) {
-        const faviconSrc = bookmark.faviconData || this.getFallbackIcon();
+        // Use faviconData if available, otherwise try customFaviconUrl, finally fall back to default
+        let faviconSrc = bookmark.faviconData;
+        if (!faviconSrc && bookmark.customFaviconUrl) {
+            faviconSrc = bookmark.customFaviconUrl;
+        }
+        if (!faviconSrc) {
+            faviconSrc = this.getFallbackIcon();
+        }
+        
         const fallbackIcon = this.getFallbackIcon();
         
         return `
@@ -505,7 +554,7 @@ class LinkShelfDashboard {
         document.getElementById('bookmark-modal-title').textContent = 'Edit Bookmark';
         document.getElementById('bookmark-url').value = bookmark.url;
         document.getElementById('bookmark-name').value = bookmark.name;
-        document.getElementById('bookmark-favicon-url').value = ''; // Don't show cached data URL, user can enter new one
+        document.getElementById('bookmark-favicon-url').value = bookmark.customFaviconUrl || '';
         document.getElementById('save-bookmark').textContent = 'Update Bookmark';
         
         // Show preview with cached favicon
@@ -513,7 +562,16 @@ class LinkShelfDashboard {
         const favicon = document.getElementById('bookmark-favicon');
         const titlePreview = document.getElementById('bookmark-title-preview');
         
-        favicon.src = bookmark.faviconData || this.getFallbackIcon();
+        // Use faviconData if available, otherwise try customFaviconUrl, finally fall back to default
+        let faviconSrc = bookmark.faviconData;
+        if (!faviconSrc && bookmark.customFaviconUrl) {
+            faviconSrc = bookmark.customFaviconUrl;
+        }
+        if (!faviconSrc) {
+            faviconSrc = this.getFallbackIcon();
+        }
+        
+        favicon.src = faviconSrc;
         titlePreview.textContent = bookmark.name;
         preview.classList.add('visible');
         
@@ -570,7 +628,8 @@ class LinkShelfDashboard {
                 id: this.generateId(),
                 name: name,
                 url: normalizedUrl,
-                faviconData: faviconData
+                faviconData: faviconData,
+                customFaviconUrl: rawFaviconUrl || null
             };
             
             if (this.currentEditingBookmark !== null) {
@@ -757,7 +816,15 @@ class LinkShelfDashboard {
     }
 
     renderInboxItem(item, index) {
-        const faviconSrc = item.faviconData || this.getFallbackIcon();
+        // Use faviconData if available, otherwise try customFaviconUrl, finally fall back to default
+        let faviconSrc = item.faviconData;
+        if (!faviconSrc && item.customFaviconUrl) {
+            faviconSrc = item.customFaviconUrl;
+        }
+        if (!faviconSrc) {
+            faviconSrc = this.getFallbackIcon();
+        }
+        
         const fallbackIcon = this.getFallbackIcon();
         
         return `
@@ -833,7 +900,8 @@ class LinkShelfDashboard {
             id: this.generateId(),
             name: name,
             url: url,
-            faviconData: faviconData
+            faviconData: faviconData,
+            customFaviconUrl: null
         };
         
         this.inbox.push(inboxItem);
@@ -850,7 +918,7 @@ class LinkShelfDashboard {
         document.getElementById('bookmark-modal-title').textContent = 'Edit Inbox Item';
         document.getElementById('bookmark-url').value = item.url;
         document.getElementById('bookmark-name').value = item.name;
-        document.getElementById('bookmark-favicon-url').value = '';
+        document.getElementById('bookmark-favicon-url').value = item.customFaviconUrl || '';
         document.getElementById('save-bookmark').textContent = 'Update Item';
         
         // Show preview with cached favicon
@@ -858,7 +926,16 @@ class LinkShelfDashboard {
         const favicon = document.getElementById('bookmark-favicon');
         const titlePreview = document.getElementById('bookmark-title-preview');
         
-        favicon.src = item.faviconData || this.getFallbackIcon();
+        // Use faviconData if available, otherwise try customFaviconUrl, finally fall back to default
+        let faviconSrc = item.faviconData;
+        if (!faviconSrc && item.customFaviconUrl) {
+            faviconSrc = item.customFaviconUrl;
+        }
+        if (!faviconSrc) {
+            faviconSrc = this.getFallbackIcon();
+        }
+        
+        favicon.src = faviconSrc;
         titlePreview.textContent = item.name;
         preview.classList.add('visible');
         
@@ -1073,7 +1150,15 @@ class LinkShelfDashboard {
     }
     
     renderFavourite(favourite, index) {
-        const faviconSrc = favourite.faviconData || this.getFallbackIcon();
+        // Use faviconData if available, otherwise try customFaviconUrl, finally fall back to default
+        let faviconSrc = favourite.faviconData;
+        if (!faviconSrc && favourite.customFaviconUrl) {
+            faviconSrc = favourite.customFaviconUrl;
+        }
+        if (!faviconSrc) {
+            faviconSrc = this.getFallbackIcon();
+        }
+        
         const fallbackIcon = this.getFallbackIcon();
         
         return `
@@ -1085,9 +1170,6 @@ class LinkShelfDashboard {
                     <div class="favourite-actions">
                         <button class="action-btn edit-btn" data-favourite-index="${index}" title="Edit Favourite">
                             ✏️
-                        </button>
-                        <button class="action-btn delete-btn" data-favourite-index="${index}" title="Delete Favourite">
-                            🗑️
                         </button>
                     </div>
                 ` : ''}
@@ -1116,15 +1198,6 @@ class LinkShelfDashboard {
                 e.preventDefault();
                 const favouriteIndex = parseInt(e.target.closest('.favourite-item').dataset.favouriteIndex);
                 this.editFavourite(favouriteIndex);
-            });
-        });
-
-        document.querySelectorAll('.favourite-item .delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const favouriteIndex = parseInt(e.target.closest('.favourite-item').dataset.favouriteIndex);
-                this.deleteFavourite(favouriteIndex);
             });
         });
 
@@ -1170,6 +1243,7 @@ class LinkShelfDashboard {
         document.getElementById('favourite-url').value = '';
         document.getElementById('favourite-favicon').value = '';
         document.getElementById('save-favourite').textContent = 'Save Favourite';
+        document.getElementById('delete-favourite').classList.add('hidden'); // Hide delete button for new favourites
         
         this.openModal('favourite-modal');
         document.getElementById('favourite-url').focus();
@@ -1182,25 +1256,29 @@ class LinkShelfDashboard {
         
         document.getElementById('favourite-modal-title').textContent = 'Edit Favourite';
         document.getElementById('favourite-url').value = favourite.url;
-        document.getElementById('favourite-favicon').value = '';
+        document.getElementById('favourite-favicon').value = favourite.customFaviconUrl || '';
         document.getElementById('save-favourite').textContent = 'Update Favourite';
+        document.getElementById('delete-favourite').classList.remove('hidden'); // Show delete button for editing
         
         this.openModal('favourite-modal');
         document.getElementById('favourite-url').focus();
     }
 
-    deleteFavourite(favouriteIndex) {
-        const favourite = this.favourites[favouriteIndex];
-        this.showConfirmation(
-            'Delete Favourite',
-            `Are you sure you want to delete the favourite for "${favourite.url}"?`,
-            () => {
-                this.favourites.splice(favouriteIndex, 1);
-                this.saveData();
-                this.renderDashboard();
-                this.showToast('Favourite deleted successfully', 'success');
-            }
-        );
+    handleDeleteFavouriteFromModal() {
+        if (this.editingFavouriteIndex !== null) {
+            const favourite = this.favourites[this.editingFavouriteIndex];
+            this.showConfirmation(
+                'Delete Favourite',
+                `Are you sure you want to delete the favourite for "${favourite.url}"?`,
+                () => {
+                    this.favourites.splice(this.editingFavouriteIndex, 1);
+                    this.saveData();
+                    this.renderDashboard();
+                    this.closeModal('favourite-modal');
+                    this.showToast('Favourite deleted successfully', 'success');
+                }
+            );
+        }
     }
 
     async handleSaveFavourite(e) {
@@ -1245,7 +1323,8 @@ class LinkShelfDashboard {
             const favouriteData = {
                 id: this.generateId(),
                 url: normalizedUrl,
-                faviconData: faviconData
+                faviconData: faviconData,
+                customFaviconUrl: customFaviconUrl || null
             };
             
             if (this.editingFavouriteIndex !== null) {
@@ -1305,21 +1384,41 @@ class LinkShelfDashboard {
     }
 
     async fetchFaviconAsDataUrl(url) {
-        const domain = new URL(url).origin;
-        const faviconUrl = `${domain}/favicon.ico`;
+        const parsedUrl = new URL(url);
+        
+        // If the URL has a specific path/filename, treat it as a direct favicon URL
+        // Otherwise, assume it's a domain and try to fetch favicon.ico
+        let faviconUrl;
+        if (parsedUrl.pathname !== '/' && (parsedUrl.pathname.endsWith('.ico') || 
+                                          parsedUrl.pathname.endsWith('.png') || 
+                                          parsedUrl.pathname.endsWith('.jpg') || 
+                                          parsedUrl.pathname.endsWith('.jpeg') || 
+                                          parsedUrl.pathname.endsWith('.gif') || 
+                                          parsedUrl.pathname.endsWith('.svg'))) {
+            // Direct favicon URL provided
+            faviconUrl = url;
+        } else {
+            // Domain URL, construct favicon.ico path
+            faviconUrl = `${parsedUrl.origin}/favicon.ico`;
+        }
         
         try {
+            console.log('Fetching favicon from:', faviconUrl);
             const response = await fetch(faviconUrl);
-            if (!response.ok) throw new Error('Favicon not found');
+            if (!response.ok) throw new Error(`Favicon fetch failed: ${response.status} ${response.statusText}`);
             
             const blob = await response.blob();
             return new Promise((resolve) => {
                 const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
+                reader.onloadend = () => {
+                    console.log('Successfully converted favicon to data URL');
+                    resolve(reader.result);
+                };
                 reader.readAsDataURL(blob);
             });
-            } catch (error) {
-            throw new Error('Could not fetch favicon');
+        } catch (error) {
+            console.warn('Could not fetch favicon from', faviconUrl, ':', error.message);
+            throw new Error(`Could not fetch favicon: ${error.message}`);
         }
     }
 

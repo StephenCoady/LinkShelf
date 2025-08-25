@@ -1169,6 +1169,11 @@ body.dragging-category .column-drop-zone:hover {
     margin-bottom: 10px;
 }
 
+/* Confirmation Modal - Higher z-index to appear above other modals */
+#confirmation-modal {
+    z-index: 2100;
+}
+
 /* Toast Notifications */
 .toast-container {
     position: fixed;
