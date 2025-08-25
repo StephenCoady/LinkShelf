@@ -6,7 +6,7 @@
     <title>LinkShelf</title>
     <link rel="stylesheet" href="dashboard.css">
 </head>
-<body>
+<body class="dashboard">
     <!-- Header -->
     <header class="header">
         <div class="header-content">
@@ -152,9 +152,17 @@
                 <div class="settings-section">
                     <h4>Import / Export</h4>
                     <div class="form-actions">
-                        <button id="export-bookmarks" class="btn btn-primary">Export Bookmarks</button>
-                        <input type="file" id="import-file" accept=".html" style="display: none;">
+                        <button id="export-bookmarks" class="btn btn-primary">Export to JSON</button>
+                        <button id="export-netscape" class="btn btn-primary">Export to HTML</button>
+                        <input type="file" id="import-file" accept=".html,.json" style="display: none;">
                         <button id="import-bookmarks" class="btn btn-secondary">Import Bookmarks</button>
+                        <button id="import-papaly" class="btn btn-secondary">Import from Papaly</button>
+                    </div>
+                    <div class="form-help-group">
+                        <small class="form-help"><strong>JSON Export:</strong> Full LinkShelf format with all features (subcategories, favorites, settings)</small>
+                        <small class="form-help"><strong>HTML Export:</strong> Standard Netscape format for importing into browsers</small>
+                        <small class="form-help"><strong>Import Bookmarks:</strong> Auto-detects JSON (LinkShelf) or HTML (browser bookmarks)</small>
+                        <small class="form-help"><strong>Import from Papaly:</strong> Specifically for Papaly bookmark board exports</small>
                     </div>
                 </div>
             </div>

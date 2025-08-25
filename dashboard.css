@@ -832,12 +832,13 @@ body.dragging-category .column-drop-zone:hover {
     position: relative;
 }
 
-.bookmarks-list {
+/* Links (top-level category links) */
+.links-list {
     list-style: none;
     margin-bottom: 13px;
 }
 
-.bookmark-item {
+.link-item, .bookmark-item {
     background-color: transparent;
     padding: 6px 8px;
     border-radius: 4px;
@@ -851,18 +852,18 @@ body.dragging-category .column-drop-zone:hover {
     color: inherit;
 }
 
-.bookmark-item:hover {
+.link-item:hover, .bookmark-item:hover {
     background-color: #1D252E;
     color: #EBF4FF;
 }
 
-.bookmark-item.dragging {
+.link-item.dragging, .bookmark-item.dragging {
     opacity: 0.7;
     transform: rotate(1deg);
     z-index: 1000;
 }
 
-.bookmark-link {
+.link-link, .bookmark-link {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -875,18 +876,18 @@ body.dragging-category .column-drop-zone:hover {
 }
 
 /* Increase padding when hovering to make room for action buttons */
-.bookmark-item:hover .bookmark-link {
+.link-item:hover .link-link, .bookmark-item:hover .bookmark-link {
     padding-right: 45px; /* Reserve space for action buttons when they appear */
 }
 
-.bookmark-favicon {
+.link-favicon, .bookmark-favicon {
     width: 13px;
     height: 13px;
     flex-shrink: 0;
     border-radius: 2px;
 }
 
-.bookmark-title {
+.link-title, .bookmark-title {
     font-size: 0.7rem;
     flex: 1;
     white-space: nowrap;
@@ -896,7 +897,7 @@ body.dragging-category .column-drop-zone:hover {
     max-width: 100%; /* Ensure truncation works */
 }
 
-.bookmark-actions {
+.link-actions, .bookmark-actions {
     display: flex;
     gap: 3px;
     position: absolute;
@@ -906,12 +907,12 @@ body.dragging-category .column-drop-zone:hover {
     transition: opacity 0.2s ease, visibility 0.2s ease;
 }
 
-.bookmark-item:hover .bookmark-actions {
+.link-item:hover .link-actions, .bookmark-item:hover .bookmark-actions {
     opacity: 1;
     visibility: visible;
 }
 
-.bookmark-action-btn {
+.link-action-btn, .bookmark-action-btn {
     background: none;
     border: none;
     color: #8B95A1;
@@ -922,9 +923,174 @@ body.dragging-category .column-drop-zone:hover {
     transition: all 0.2s ease;
 }
 
-.bookmark-action-btn:hover {
+.link-action-btn:hover, .bookmark-action-btn:hover {
     background-color: #3C4D5E;
     color: #C0C9D1;
+}
+
+/* Subcategories */
+.subcategory {
+    margin-bottom: 12px;
+    border: 1px solid #3C4D5E;
+    border-radius: 6px;
+    background-color: #2A3642;
+}
+
+.subcategory-header {
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #3C4D5E;
+    min-height: 32px;
+    position: relative;
+}
+
+.subcategory-toggle-btn {
+    background: none;
+    border: none;
+    color: #8B95A1;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+}
+
+.subcategory-toggle-btn:hover {
+    background-color: #3C4D5E;
+    color: #C0C9D1;
+}
+
+.subcategory-caret {
+    transition: transform 0.2s ease;
+    display: inline-block;
+}
+
+.subcategory-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #C0C9D1;
+    margin: 0;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.add-subcategory-link-btn {
+    background: none;
+    border: none;
+    color: #8B95A1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-size: 12px;
+    font-weight: normal;
+    transition: all 0.2s ease;
+    opacity: 0;
+    visibility: hidden;
+}
+
+.subcategory-header:hover .add-subcategory-link-btn {
+    opacity: 1;
+    visibility: visible;
+}
+
+.add-subcategory-link-btn:hover {
+    background-color: #3C4D5E;
+    color: #C0C9D1;
+}
+
+.subcategory-actions {
+    position: relative;
+}
+
+.subcategory-menu-btn {
+    background: none;
+    border: none;
+    color: #8B95A1;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 2px;
+    transition: all 0.2s ease;
+    font-size: 12px;
+    line-height: 1;
+    opacity: 0;
+    visibility: hidden;
+}
+
+.subcategory-header:hover .subcategory-menu-btn {
+    opacity: 1;
+    visibility: visible;
+}
+
+.subcategory-menu-btn:hover {
+    background-color: #3C4D5E;
+    color: #C0C9D1;
+}
+
+.subcategory-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background-color: #1D252E;
+    border: 1px solid #3C4D5E;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 99999;
+    min-width: 140px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.2s ease;
+}
+
+.subcategory-dropdown-menu.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.subcategory-body {
+    padding: 8px 10px;
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.subcategory-body.collapsed {
+    height: 0;
+    padding: 0 10px;
+    opacity: 0;
+}
+
+.subcategory-links-list {
+    list-style: none;
+    margin: 0;
+}
+
+.subcategory .link-item {
+    margin-left: 16px;
+    border-left: 2px solid transparent;
+    padding-left: 12px;
+    transition: border-color 0.2s ease;
+}
+
+.subcategory .link-item:hover {
+    border-left-color: #34C780;
+    background-color: rgba(52, 199, 128, 0.05);
+}
+
+/* Legacy bookmark styles for backward compatibility */
+.bookmarks-list {
+    list-style: none;
+    margin-bottom: 13px;
 }
 
 .add-bookmark-btn {
@@ -946,7 +1112,7 @@ body.dragging-category .column-drop-zone:hover {
     border-color: #5A6F83;
 }
 
-.add-bookmark-plus-btn {
+.add-link-plus-btn, .add-bookmark-plus-btn {
     position: absolute;
     top: 50%;
     right: 48px;
@@ -967,11 +1133,13 @@ body.dragging-category .column-drop-zone:hover {
     visibility: hidden;
 }
 
+.category-header:hover .add-link-plus-btn,
 .category-header:hover .add-bookmark-plus-btn {
     opacity: 1;
     visibility: visible;
 }
 
+.add-link-plus-btn:hover,
 .add-bookmark-plus-btn:hover {
     background-color: #4A5F73;
     border-radius: 50%;
@@ -1129,6 +1297,20 @@ body.dragging-category .column-drop-zone:hover {
     font-style: italic;
 }
 
+.form-help-group {
+    margin-top: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(229, 231, 235, 0.5);
+}
+
+.form-help-group .form-help {
+    margin-top: 0.5rem;
+}
+
+.form-help-group .form-help:first-child {
+    margin-top: 0;
+}
+
 .form-actions {
     display: flex;
     gap: 10px;
@@ -1226,7 +1408,8 @@ body.dragging-category .column-drop-zone:hover {
 
 
 
-/* Bookmark drag feedback */
+/* Link/Bookmark drag feedback */
+.link-item.drag-over-top::before,
 .bookmark-item.drag-over-top::before {
     content: '';
     position: absolute;
@@ -1238,6 +1421,7 @@ body.dragging-category .column-drop-zone:hover {
     border-radius: 1px;
 }
 
+.link-item.drag-over-bottom::after,
 .bookmark-item.drag-over-bottom::after {
     content: '';
     position: absolute;
@@ -1249,8 +1433,11 @@ body.dragging-category .column-drop-zone:hover {
     border-radius: 1px;
 }
 
-/* Empty category feedback when dragging bookmarks */
-body.dragging-bookmark .bookmarks-list:empty {
+/* Empty list feedback when dragging links */
+body.dragging-link .links-list:empty,
+body.dragging-bookmark .bookmarks-list:empty,
+body.dragging-inbox .links-list:empty,
+body.dragging-inbox .subcategory-links-list:empty {
     min-height: 40px;
     border: 2px dashed #4A5F73;
     border-radius: 4px;
@@ -1262,33 +1449,42 @@ body.dragging-bookmark .bookmarks-list:empty {
     transition: all 0.2s ease;
 }
 
-/* Inbox visual feedback when dragging bookmarks */
+/* Inbox visual feedback when dragging links */
+body.dragging-link .inbox-content,
 body.dragging-bookmark .inbox-content {
     border: 1px dashed #4A5F73;
     opacity: 0.8;
     transition: all 0.2s ease;
 }
 
+body.dragging-link .inbox-content:hover,
+body.dragging-link .inbox-content.drag-over,
 body.dragging-bookmark .inbox-content:hover,
 body.dragging-bookmark .inbox-content.drag-over {
     opacity: 1;
     border-color: #34C780;
 }
 
+body.dragging-link .links-list:empty::before,
 body.dragging-bookmark .bookmarks-list:empty::before {
-    content: 'Drop bookmark here';
+    content: 'Drop link here';
     color: #8B95A1;
     font-size: 0.65rem;
     font-style: italic;
 }
 
+body.dragging-link .links-list:empty:hover,
 body.dragging-bookmark .bookmarks-list:empty:hover {
     border-color: #34C780;
     background-color: rgba(52, 199, 128, 0.1);
     opacity: 1;
 }
 
-/* Make empty bookmarks lists visible drop targets */
+/* Empty subcategory lists drop targets */
+/* REMOVED - duplicate styles consolidated below */
+
+/* Make empty links lists visible drop targets */
+.links-list:empty,
 .bookmarks-list:empty {
     min-height: 40px;
     position: relative;
@@ -1297,8 +1493,9 @@ body.dragging-bookmark .bookmarks-list:empty:hover {
     margin: 8px 0;
 }
 
+.links-list:empty::before,
 .bookmarks-list:empty::before {
-    content: 'Drop bookmarks here';
+    content: 'Drop links here';
     position: absolute;
     top: 50%;
     left: 50%;
@@ -1308,8 +1505,69 @@ body.dragging-bookmark .bookmarks-list:empty:hover {
     pointer-events: none;
 }
 
-/* Empty bookmarks list drop indicator when dragging bookmarks */
-body.dragging-bookmark .bookmarks-list.drag-over-empty::before {
+.subcategory-links-list:empty {
+    min-height: 30px;
+    position: relative;
+    border: 1px dashed rgba(74, 95, 115, 0.3);
+    border-radius: 4px;
+    margin: 4px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.subcategory-links-list:empty::before {
+    content: '';
+    pointer-events: none;
+}
+
+/* Subtle styling for empty subcategory drop zones when dragging */
+body.dragging-link .subcategory-links-list:empty,
+body.dragging-bookmark .subcategory-links-list:empty,
+body.dragging-inbox .subcategory-links-list:empty {
+    min-height: 35px;
+    border: 1px dashed rgba(74, 95, 115, 0.4);
+    border-radius: 4px;
+    background-color: rgba(74, 95, 115, 0.02);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    opacity: 0.7;
+}
+
+/* Green line indicator when dragging over empty subcategory lists */
+body.dragging-link .subcategory-links-list:empty.drag-over-empty,
+body.dragging-bookmark .subcategory-links-list:empty.drag-over-empty,
+body.dragging-inbox .subcategory-links-list:empty.drag-over-empty {
+    min-height: 40px;
+    border-color: #34C780;
+    background-color: rgba(52, 199, 128, 0.05);
+    opacity: 1;
+    position: relative;
+}
+
+/* Green line indicator at top of drop zone */
+body.dragging-link .subcategory-links-list:empty.drag-over-empty::after,
+body.dragging-bookmark .subcategory-links-list:empty.drag-over-empty::after,
+body.dragging-inbox .subcategory-links-list:empty.drag-over-empty::after {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #34C780;
+    border-radius: 1px;
+}
+
+/* REMOVED - duplicate and debug styles cleaned up */
+
+/* Empty list drop indicators */
+body.dragging-link .links-list.drag-over-empty::before,
+body.dragging-bookmark .bookmarks-list.drag-over-empty::before,
+body.dragging-inbox .links-list.drag-over-empty::before {
     content: '';
     position: absolute;
     top: 50%;
@@ -1322,7 +1580,9 @@ body.dragging-bookmark .bookmarks-list.drag-over-empty::before {
     border-radius: 1px;
 }
 
-body.dragging-bookmark .bookmarks-list.drag-over-empty {
+body.dragging-link .links-list.drag-over-empty,
+body.dragging-bookmark .bookmarks-list.drag-over-empty,
+body.dragging-inbox .links-list.drag-over-empty {
     background-color: rgba(52, 199, 128, 0.05);
     border-radius: 4px;
     min-height: 40px;
@@ -1330,8 +1590,14 @@ body.dragging-bookmark .bookmarks-list.drag-over-empty {
     border-color: #34C780;
 }
 
-/* Category body drop indicator when dragging bookmarks */
-body.dragging-bookmark .category-body.drag-over::before {
+/* Subcategory drop indicators */
+/* REMOVED - duplicate styles consolidated above */
+
+/* Category body drop indicators */
+body.dragging-link .category-body.drag-over::before,
+body.dragging-bookmark .category-body.drag-over::before,
+body.dragging-inbox .category-body.drag-over::before,
+body.dragging-subcategory .category-body.drag-over::before {
     content: '';
     position: absolute;
     top: -2px;
@@ -1343,8 +1609,16 @@ body.dragging-bookmark .category-body.drag-over::before {
     z-index: 10;
 }
 
-/* Inbox drag feedback - same style as bookmark drags */
-body.dragging-inbox .category-body.drag-over::before {
+/* Subcategory drag over category body feedback */
+body.dragging-subcategory .category-body.drag-over {
+    background-color: rgba(52, 199, 128, 0.05);
+    border: 1px dashed #34C780;
+    border-radius: 4px;
+}
+
+/* Subcategory body drop indicators */
+body.dragging-link .subcategory-body.drag-over::before,
+body.dragging-inbox .subcategory-body.drag-over::before {
     content: '';
     position: absolute;
     top: -2px;
@@ -1356,25 +1630,35 @@ body.dragging-inbox .category-body.drag-over::before {
     z-index: 10;
 }
 
-body.dragging-inbox .bookmarks-list.drag-over-empty::before {
+/* Subcategory drag feedback */
+.subcategory.dragging {
+    opacity: 0.7;
+    transform: rotate(1deg);
+    z-index: 1000;
+}
+
+.subcategory.drag-over-top::before {
     content: '';
     position: absolute;
-    top: 50%;
+    top: -2px;
     left: 0;
     right: 0;
     height: 2px;
     background-color: #34C780;
-    z-index: 10;
-    transform: translateY(-50%);
     border-radius: 1px;
+    z-index: 10;
 }
 
-body.dragging-inbox .bookmarks-list.drag-over-empty {
-    background-color: rgba(52, 199, 128, 0.05);
-    border-radius: 4px;
-    min-height: 40px;
-    position: relative;
-    border-color: #34C780;
+.subcategory.drag-over-bottom::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: #34C780;
+    border-radius: 1px;
+    z-index: 10;
 }
 
 /* Empty State */
