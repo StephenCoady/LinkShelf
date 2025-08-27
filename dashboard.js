@@ -16,7 +16,7 @@ class LinkShelfDashboard {
         this.editingFavouriteIndex = null;
         this.draggedElement = null;
         this.draggedType = null;
-        this.sidebarOpen = false;
+        this.sidebarOpen = this.loadSidebarState();
     }
 
     // Initialize the dashboard
@@ -25,6 +25,7 @@ class LinkShelfDashboard {
         this.setupStorageListener();
         this.setupEventListeners();
         this.renderDashboard();
+        this.initializeSidebar();
     }
 
     // Data Management
@@ -178,6 +179,35 @@ class LinkShelfDashboard {
         return 'id_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
     }
 
+    // Visual Effects
+    flashNewItem(selector, delay = 100) {
+        // Small delay to ensure DOM has rendered
+        setTimeout(() => {
+            const element = document.querySelector(selector);
+            if (element) {
+                element.classList.add('new-item-flash');
+                
+                // Remove the class after animation completes
+                setTimeout(() => {
+                    element.classList.remove('new-item-flash');
+                }, 2500);
+            }
+        }, delay);
+    }
+
+    flashNewItemByElement(element, delay = 100) {
+        if (!element) return;
+        
+        setTimeout(() => {
+            element.classList.add('new-item-flash');
+            
+            // Remove the class after animation completes
+            setTimeout(() => {
+                element.classList.remove('new-item-flash');
+            }, 2500);
+        }, delay);
+    }
+
     // Event Listeners
     setupEventListeners() {
         // Header buttons
@@ -192,6 +222,7 @@ class LinkShelfDashboard {
         // Bookmark modal
         document.getElementById('bookmark-form').addEventListener('submit', (e) => this.handleSaveBookmark(e));
         document.getElementById('cancel-bookmark').addEventListener('click', () => this.closeModal('bookmark-modal'));
+        document.getElementById('delete-bookmark').addEventListener('click', () => this.handleDeleteBookmarkFromModal());
         document.getElementById('bookmark-url').addEventListener('input', (e) => this.handleUrlInputDebounced(e));
         document.getElementById('bookmark-url').addEventListener('blur', (e) => this.handleUrlInputImmediate(e));
         document.getElementById('bookmark-favicon-url').addEventListener('input', (e) => this.handleFaviconUrlInput(e));
@@ -265,23 +296,17 @@ class LinkShelfDashboard {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
-                const linkIndex = parseInt(e.target.dataset.linkIndex || e.target.dataset.bookmarkIndex);
-                const subcategoryIndex = e.target.dataset.subcategoryIndex ? parseInt(e.target.dataset.subcategoryIndex) : null;
+                // Use currentTarget to get the button element, not the clicked image inside
+                const button = e.currentTarget;
+                const categoryIndex = parseInt(button.dataset.categoryIndex);
+                const linkIndex = parseInt(button.dataset.linkIndex || button.dataset.bookmarkIndex);
+                const subcategoryIndex = button.dataset.subcategoryIndex ? parseInt(button.dataset.subcategoryIndex) : null;
+                
                 this.editLink(categoryIndex, linkIndex, subcategoryIndex);
             });
         });
 
-        document.querySelectorAll('.link-delete-btn, .bookmark-delete-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
-                const linkIndex = parseInt(e.target.dataset.linkIndex || e.target.dataset.bookmarkIndex);
-                const subcategoryIndex = e.target.dataset.subcategoryIndex ? parseInt(e.target.dataset.subcategoryIndex) : null;
-                this.deleteLink(categoryIndex, linkIndex, subcategoryIndex);
-            });
-        });
+        // Delete buttons removed from UI - delete functionality moved to edit modal
 
         // Favicon error handling for links
         document.querySelectorAll('.link-favicon, .bookmark-favicon').forEach(img => {
@@ -443,10 +468,7 @@ class LinkShelfDashboard {
                 </a>
                 <div class="link-actions">
                     <button class="link-action-btn link-edit-btn" ${dataAttributes} title="Edit Link">
-                        ✏️
-                    </button>
-                    <button class="link-action-btn link-delete-btn" ${dataAttributes} title="Delete Link">
-                        🗑️
+                        <img src="icons/app_icons/pencil_white.png" alt="Edit" style="width: 16px; height: 16px;">
                     </button>
                 </div>
             </li>
@@ -554,11 +576,14 @@ class LinkShelfDashboard {
                 position: slot.position
             };
 
-            this.categories.push(newCategory);
+            this.categories.unshift(newCategory);
             await this.saveData();
             this.renderDashboard();
             this.closeModal('create-category-modal');
             this.showToast('Category created successfully', 'success');
+            
+            // Flash the new category (it will be at index 0 since we used unshift)
+            this.flashNewItem(`[data-category-index="0"]`);
         } else if (this.categoryModalMode === 'edit') {
             // Update existing category
             if (this.editingCategoryIndex !== null) {
@@ -693,10 +718,13 @@ class LinkShelfDashboard {
             collapsed: false
         };
 
-        this.categories[categoryIndex].subcategories.push(newSubcategory);
+        this.categories[categoryIndex].subcategories.unshift(newSubcategory);
         await this.saveData();
         this.renderDashboard();
         this.showToast('Subcategory created successfully', 'success');
+        
+        // Flash the new subcategory (it will be at index 0 since we used unshift)
+        this.flashNewItem(`[data-category-index="${categoryIndex}"] [data-subcategory-index="0"]`);
     }
 
     async editSubcategory(categoryIndex, subcategoryIndex, newName) {
@@ -768,6 +796,7 @@ class LinkShelfDashboard {
         document.getElementById('bookmark-name').value = '';
         document.getElementById('bookmark-favicon-url').value = '';
         document.getElementById('save-bookmark').textContent = 'Save Link';
+        document.getElementById('delete-bookmark').classList.add('hidden'); // Hide delete button for new items
         this.hideBookmarkPreview();
         
         this.openModal('bookmark-modal');
@@ -781,10 +810,33 @@ class LinkShelfDashboard {
 
     editLink(categoryIndex, linkIndex, subcategoryIndex = null) {
         let link;
+        
+        // Defensive checks for data integrity
+        if (!this.categories[categoryIndex]) {
+            console.error('Category not found:', categoryIndex);
+            return;
+        }
+        
         if (subcategoryIndex !== null) {
-            link = this.categories[categoryIndex].subcategories[subcategoryIndex].links[linkIndex];
+            const subcategory = this.categories[categoryIndex].subcategories?.[subcategoryIndex];
+            if (!subcategory || !subcategory.links) {
+                console.error('Subcategory or links not found:', categoryIndex, subcategoryIndex);
+                return;
+            }
+            link = subcategory.links[linkIndex];
         } else {
-            link = this.categories[categoryIndex].links[linkIndex];
+            // Handle backward compatibility - categories use 'bookmarks' not 'links'
+            const linksArray = this.categories[categoryIndex].links || this.categories[categoryIndex].bookmarks;
+            if (!linksArray) {
+                console.error('No links or bookmarks array found in category:', categoryIndex);
+                return;
+            }
+            link = linksArray[linkIndex];
+        }
+        
+        if (!link) {
+            console.error('Link not found at index:', linkIndex);
+            return;
         }
         
         this.currentEditingBookmark = linkIndex;
@@ -799,6 +851,7 @@ class LinkShelfDashboard {
         document.getElementById('bookmark-name').value = link.name;
         document.getElementById('bookmark-favicon-url').value = link.customFaviconUrl || '';
         document.getElementById('save-bookmark').textContent = 'Update Link';
+        document.getElementById('delete-bookmark').classList.remove('hidden'); // Show delete button for editing
         
         // Show preview with cached favicon
         const preview = document.querySelector('.bookmark-preview');
@@ -833,7 +886,10 @@ class LinkShelfDashboard {
         const name = document.getElementById('bookmark-name').value.trim();
         const rawFaviconUrl = document.getElementById('bookmark-favicon-url').value.trim();
         
-        if (!rawUrl) {
+        // Normalize URL first
+        const normalizedUrl = this.normalizeUrl(rawUrl);
+        
+        if (!normalizedUrl) {
             this.showToast('URL is required', 'error');
             return;
         }
@@ -849,15 +905,14 @@ class LinkShelfDashboard {
         saveBtn.disabled = true;
 
         try {
-            // Normalize URL
-            const normalizedUrl = this.normalizeUrl(rawUrl);
             
             let faviconData = null;
             
             // Use custom favicon if provided, otherwise try to fetch from domain
             if (rawFaviconUrl) {
                 try {
-                    faviconData = await this.fetchFaviconAsDataUrl(rawFaviconUrl);
+                    const normalizedFaviconUrl = this.normalizeUrl(rawFaviconUrl);
+                    faviconData = await this.fetchFaviconAsDataUrl(normalizedFaviconUrl);
                 } catch (error) {
                     console.warn('Could not fetch custom favicon:', error);
                 }
@@ -877,7 +932,7 @@ class LinkShelfDashboard {
                 name: name,
                 url: normalizedUrl,
                 faviconData: faviconData,
-                customFaviconUrl: rawFaviconUrl || null
+                customFaviconUrl: rawFaviconUrl ? this.normalizeUrl(rawFaviconUrl) : null
             };
             
             if (this.currentEditingBookmark !== null) {
@@ -890,18 +945,20 @@ class LinkShelfDashboard {
                     this.categories[this.currentEditingCategory].subcategories[this.currentEditingSubcategory].links[this.currentEditingBookmark] = bookmarkData;
                     this.showToast('Link updated successfully', 'success');
                 } else {
-                    // Update existing category link
-                    this.categories[this.currentEditingCategory].links[this.currentEditingBookmark] = bookmarkData;
+                    // Update existing category link (backward compatibility)
+                    const linksArray = this.categories[this.currentEditingCategory].links || this.categories[this.currentEditingCategory].bookmarks;
+                    linksArray[this.currentEditingBookmark] = bookmarkData;
                     this.showToast('Link updated successfully', 'success');
                 }
             } else {
                 if (this.currentEditingSubcategory !== null) {
-                    // Add new subcategory link
-                    this.categories[this.currentEditingCategory].subcategories[this.currentEditingSubcategory].links.push(bookmarkData);
+                    // Add new subcategory link to top
+                    this.categories[this.currentEditingCategory].subcategories[this.currentEditingSubcategory].links.unshift(bookmarkData);
                     this.showToast('Link added to subcategory successfully', 'success');
                 } else {
-                    // Add new category link
-                    this.categories[this.currentEditingCategory].links.push(bookmarkData);
+                    // Add new category link to top (backward compatibility)
+                    const linksArray = this.categories[this.currentEditingCategory].links || this.categories[this.currentEditingCategory].bookmarks;
+                    linksArray.unshift(bookmarkData);
                     this.showToast('Link added to category successfully', 'success');
                 }
             }
@@ -909,6 +966,18 @@ class LinkShelfDashboard {
             await this.saveData();
             this.renderDashboard();
             this.closeModal('bookmark-modal');
+            
+            // Flash the new link if it was just created
+            if (!this.currentEditingBookmark) {
+                // Find and flash the new link (first link in the target location)
+                if (this.currentEditingSubcategory !== null) {
+                    // New subcategory link
+                    this.flashNewItem(`[data-category-index="${this.currentEditingCategory}"] [data-subcategory-index="${this.currentEditingSubcategory}"] .link-item:first-child`);
+                } else {
+                    // New category link  
+                    this.flashNewItem(`[data-category-index="${this.currentEditingCategory}"] .links-list .link-item:first-child`);
+                }
+            }
         } catch (error) {
             console.error('Error saving bookmark:', error);
             this.showToast('Error saving bookmark', 'error');
@@ -980,12 +1049,34 @@ class LinkShelfDashboard {
 
     deleteLink(categoryIndex, linkIndex, subcategoryIndex = null) {
         let link, linksArray;
+        
+        // Defensive checks for data integrity
+        if (!this.categories[categoryIndex]) {
+            console.error('Category not found:', categoryIndex);
+            return;
+        }
+        
         if (subcategoryIndex !== null) {
-            linksArray = this.categories[categoryIndex].subcategories[subcategoryIndex].links;
+            const subcategory = this.categories[categoryIndex].subcategories?.[subcategoryIndex];
+            if (!subcategory || !subcategory.links) {
+                console.error('Subcategory or links not found:', categoryIndex, subcategoryIndex);
+                return;
+            }
+            linksArray = subcategory.links;
             link = linksArray[linkIndex];
         } else {
-            linksArray = this.categories[categoryIndex].links;
+            // Handle backward compatibility - categories use 'bookmarks' not 'links'
+            linksArray = this.categories[categoryIndex].links || this.categories[categoryIndex].bookmarks;
+            if (!linksArray) {
+                console.error('No links or bookmarks array found in category:', categoryIndex);
+                return;
+            }
             link = linksArray[linkIndex];
+        }
+        
+        if (!link) {
+            console.error('Link not found at index:', linkIndex);
+            return;
         }
         
         const isSubcategory = subcategoryIndex !== null;
@@ -1006,6 +1097,39 @@ class LinkShelfDashboard {
     // Backward compatibility
     deleteBookmark(categoryIndex, bookmarkIndex) {
         this.deleteLink(categoryIndex, bookmarkIndex);
+    }
+
+    handleDeleteBookmarkFromModal() {
+        if (this.currentEditingBookmark !== null && this.currentEditingCategory !== null) {
+            const categoryIndex = this.currentEditingCategory;
+            const linkIndex = this.currentEditingBookmark;
+            const subcategoryIndex = this.currentEditingSubcategory;
+            
+            let link, linksArray;
+            if (subcategoryIndex !== null) {
+                linksArray = this.categories[categoryIndex].subcategories[subcategoryIndex].links;
+                link = linksArray[linkIndex];
+            } else {
+                // Handle backward compatibility - categories use 'bookmarks' not 'links'
+                linksArray = this.categories[categoryIndex].links || this.categories[categoryIndex].bookmarks;
+                link = linksArray[linkIndex];
+            }
+            
+            const isSubcategory = subcategoryIndex !== null;
+            const confirmTitle = isSubcategory ? 'Delete Subcategory Link' : 'Delete Category Link';
+            
+            this.showConfirmation(
+                confirmTitle,
+                `Are you sure you want to delete "${link.name}"?`,
+                () => {
+                    linksArray.splice(linkIndex, 1);
+                    this.saveData();
+                    this.renderDashboard();
+                    this.closeModal('bookmark-modal');
+                    this.showToast('Link deleted successfully', 'success');
+                }
+            );
+        }
     }
 
     async moveBookmarkToPosition(sourceCategoryIndex, sourceBookmarkIndex, targetCategoryIndex, targetPosition) {
@@ -1050,7 +1174,8 @@ class LinkShelfDashboard {
             sourceLinksArray = this.categories[sourceCategoryIndex].subcategories[sourceSubcategoryIndex].links;
             link = sourceLinksArray[sourceLinkIndex];
         } else {
-            sourceLinksArray = this.categories[sourceCategoryIndex].links;
+            // Handle backward compatibility - categories use 'bookmarks' not 'links'
+            sourceLinksArray = this.categories[sourceCategoryIndex].links || this.categories[sourceCategoryIndex].bookmarks;
             link = sourceLinksArray[sourceLinkIndex];
         }
         
@@ -1067,7 +1192,8 @@ class LinkShelfDashboard {
         if (targetSubcategoryIndex !== null) {
             targetLinksArray = this.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].links;
         } else {
-            targetLinksArray = this.categories[targetCategoryIndex].links;
+            // Handle backward compatibility - categories use 'bookmarks' not 'links'
+            targetLinksArray = this.categories[targetCategoryIndex].links || this.categories[targetCategoryIndex].bookmarks;
         }
         
         // Handle position adjustment for same list moves
@@ -1118,7 +1244,8 @@ class LinkShelfDashboard {
         if (targetSubcategoryIndex !== null) {
             targetLinksArray = this.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].links;
         } else {
-            targetLinksArray = this.categories[targetCategoryIndex].links;
+            // Handle backward compatibility - categories use 'bookmarks' not 'links'
+            targetLinksArray = this.categories[targetCategoryIndex].links || this.categories[targetCategoryIndex].bookmarks;
         }
 
         // Handle position
@@ -1170,21 +1297,61 @@ class LinkShelfDashboard {
         }
     }
 
+    // Sidebar State Management
+    loadSidebarState() {
+        try {
+            const saved = localStorage.getItem('linkshelf_sidebar_open');
+            return saved === 'true';
+        } catch (error) {
+            console.warn('Failed to load sidebar state:', error);
+            return false;
+        }
+    }
+
+    saveSidebarState() {
+        try {
+            localStorage.setItem('linkshelf_sidebar_open', this.sidebarOpen.toString());
+        } catch (error) {
+            console.warn('Failed to save sidebar state:', error);
+        }
+    }
+
+    initializeSidebar() {
+        const sidebar = document.getElementById('inbox-sidebar');
+        const toggleBtn = document.getElementById('sidebar-toggle');
+        
+        // Disable transitions during initial setup
+        document.body.classList.add('no-transitions');
+        
+        if (this.sidebarOpen) {
+            sidebar.classList.add('open');
+            document.body.classList.add('sidebar-open');
+        } else {
+            sidebar.classList.remove('open');
+            document.body.classList.remove('sidebar-open');
+        }
+        
+        // Re-enable transitions after a brief delay
+        setTimeout(() => {
+            document.body.classList.remove('no-transitions');
+        }, 50);
+    }
+
     // Inbox Management
     toggleSidebar() {
         this.sidebarOpen = !this.sidebarOpen;
         const sidebar = document.getElementById('inbox-sidebar');
-        const toggleBtn = document.getElementById('sidebar-toggle');
         
         if (this.sidebarOpen) {
             sidebar.classList.add('open');
-            toggleBtn.classList.add('active');
             document.body.classList.add('sidebar-open');
         } else {
             sidebar.classList.remove('open');
-            toggleBtn.classList.remove('active');
             document.body.classList.remove('sidebar-open');
         }
+        
+        // Save the state
+        this.saveSidebarState();
     }
 
     renderInbox() {
@@ -1233,11 +1400,11 @@ class LinkShelfDashboard {
                     <span class="inbox-title">${this.escapeHtml(item.name)}</span>
                 </a>
                 <div class="inbox-actions">
-                    <button class="inbox-action-btn inbox-edit-btn" data-inbox-index="${index}" title="Edit Bookmark">
-                        ✏️
+                    <button class="inbox-action-btn inbox-edit-btn" data-inbox-index="${index}" title="Edit Inbox Item">
+                        <img src="icons/app_icons/pencil_white.png" alt="Edit" style="width: 16px; height: 16px;">
                     </button>
-                    <button class="inbox-action-btn inbox-delete-btn" data-inbox-index="${index}" title="Delete Bookmark">
-                        🗑️
+                    <button class="inbox-action-btn inbox-delete-btn" data-inbox-index="${index}" title="Delete Inbox Item">
+                        <img src="icons/app_icons/trash_white.png" alt="Delete" style="width: 16px; height: 16px;">
                     </button>
                 </div>
             </div>
@@ -1250,7 +1417,9 @@ class LinkShelfDashboard {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                const inboxIndex = parseInt(e.target.dataset.inboxIndex);
+                // Use currentTarget to get the button element, not the clicked image inside
+                const button = e.currentTarget;
+                const inboxIndex = parseInt(button.dataset.inboxIndex);
                 this.editInboxItem(inboxIndex);
             });
         });
@@ -1260,7 +1429,9 @@ class LinkShelfDashboard {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                const inboxIndex = parseInt(e.target.dataset.inboxIndex);
+                // Use currentTarget to get the button element, not the clicked image inside
+                const button = e.currentTarget;
+                const inboxIndex = parseInt(button.dataset.inboxIndex);
                 this.deleteInboxItem(inboxIndex);
             });
         });
@@ -1303,7 +1474,7 @@ class LinkShelfDashboard {
             customFaviconUrl: null
         };
         
-        this.inbox.push(inboxItem);
+        this.inbox.unshift(inboxItem);
         await this.saveData();
         this.renderInbox();
         this.showToast('Added to inbox', 'success');
@@ -1311,12 +1482,18 @@ class LinkShelfDashboard {
 
     editInboxItem(inboxIndex) {
         const item = this.inbox[inboxIndex];
+        
+        if (!item) {
+            console.error('Inbox item not found at index:', inboxIndex);
+            return;
+        }
+        
         this.currentEditingBookmark = inboxIndex;
         this.currentEditingCategory = 'inbox';
         
         document.getElementById('bookmark-modal-title').textContent = 'Edit Inbox Item';
-        document.getElementById('bookmark-url').value = item.url;
-        document.getElementById('bookmark-name').value = item.name;
+        document.getElementById('bookmark-url').value = item.url || '';
+        document.getElementById('bookmark-name').value = item.name || '';
         document.getElementById('bookmark-favicon-url').value = item.customFaviconUrl || '';
         document.getElementById('save-bookmark').textContent = 'Update Item';
         
@@ -1343,6 +1520,11 @@ class LinkShelfDashboard {
 
     deleteInboxItem(inboxIndex) {
         const item = this.inbox[inboxIndex];
+        
+        if (!item) {
+            console.error('Inbox item not found at index:', inboxIndex);
+            return;
+        }
         
         this.showConfirmation(
             'Delete Inbox Item',
@@ -1438,7 +1620,7 @@ class LinkShelfDashboard {
         };
 
         // Add to inbox
-        this.inbox.push(inboxItem);
+        this.inbox.unshift(inboxItem);
 
         // Remove from category
         this.categories[categoryIndex].bookmarks.splice(bookmarkIndex, 1);
@@ -1568,7 +1750,7 @@ class LinkShelfDashboard {
                 ${this.favouritesEditMode ? `
                     <div class="favourite-actions">
                         <button class="action-btn edit-btn" data-favourite-index="${index}" title="Edit Favourite">
-                            ✏️
+                            <img src="icons/app_icons/pencil_white.png" alt="Edit" style="width: 16px; height: 16px;">
                         </button>
                     </div>
                 ` : ''}
@@ -1595,7 +1777,10 @@ class LinkShelfDashboard {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                const favouriteIndex = parseInt(e.target.closest('.favourite-item').dataset.favouriteIndex);
+                // Use currentTarget to get the button, then find the favourite item
+                const button = e.currentTarget;
+                const favouriteItem = button.closest('.favourite-item');
+                const favouriteIndex = parseInt(favouriteItem.dataset.favouriteIndex);
                 this.editFavourite(favouriteIndex);
             });
         });
@@ -1650,6 +1835,12 @@ class LinkShelfDashboard {
 
     editFavourite(favouriteIndex) {
         const favourite = this.favourites[favouriteIndex];
+        
+        if (!favourite) {
+            console.error('Favourite not found at index:', favouriteIndex);
+            return;
+        }
+        
         this.currentEditingFavourite = favourite;
         this.editingFavouriteIndex = favouriteIndex;
         
@@ -1684,10 +1875,13 @@ class LinkShelfDashboard {
         e.preventDefault();
         
         const formData = new FormData(e.target);
-        const url = formData.get('url').trim();
-        const customFaviconUrl = formData.get('favicon').trim();
+        const rawUrl = formData.get('url').trim();
+        const rawCustomFaviconUrl = formData.get('favicon').trim();
         
-        if (!url) {
+        // Normalize URL first
+        const normalizedUrl = this.normalizeUrl(rawUrl);
+        
+        if (!normalizedUrl) {
             this.showToast('URL is required', 'error');
             return;
         }
@@ -1696,15 +1890,13 @@ class LinkShelfDashboard {
         saveBtn.disabled = true;
         
         try {
-            // Normalize URL
-            const normalizedUrl = this.normalizeUrl(url);
-            
             let faviconData = null;
             
             // Use custom favicon if provided, otherwise try to fetch from domain
-            if (customFaviconUrl) {
+            if (rawCustomFaviconUrl) {
                 try {
-                    faviconData = await this.fetchFaviconAsDataUrl(customFaviconUrl);
+                    const normalizedFaviconUrl = this.normalizeUrl(rawCustomFaviconUrl);
+                    faviconData = await this.fetchFaviconAsDataUrl(normalizedFaviconUrl);
                 } catch (error) {
                     console.warn('Could not fetch custom favicon:', error);
                 }
@@ -1723,7 +1915,7 @@ class LinkShelfDashboard {
                 id: this.generateId(),
                 url: normalizedUrl,
                 faviconData: faviconData,
-                customFaviconUrl: customFaviconUrl || null
+                customFaviconUrl: rawCustomFaviconUrl ? this.normalizeUrl(rawCustomFaviconUrl) : null
             };
             
             if (this.editingFavouriteIndex !== null) {
@@ -1776,10 +1968,19 @@ class LinkShelfDashboard {
 
     // URL and Favicon Handling
     normalizeUrl(url) {
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-            return url;
+        if (!url || !url.trim()) {
+            return '';
         }
-        return 'https://' + url;
+        
+        const trimmedUrl = url.trim();
+        
+        // Already has protocol
+        if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+            return trimmedUrl;
+        }
+        
+        // Default to https://
+        return 'https://' + trimmedUrl;
     }
 
     async fetchFaviconAsDataUrl(url) {
@@ -2679,9 +2880,35 @@ class LinkShelfDashboard {
         this.openModal('settings-modal');
     }
 
+    relocateOrphanedCategories(newColumnCount) {
+        const targetColumn = newColumnCount - 1; // Last visible column
+        const orphanedCategories = this.categories.filter(category => category.column >= newColumnCount);
+        
+        if (orphanedCategories.length === 0) return;
+        
+        // Find the highest position in the target column
+        const categoriesInTargetColumn = this.categories.filter(category => category.column === targetColumn);
+        let maxPosition = Math.max(...categoriesInTargetColumn.map(cat => cat.position), -1);
+        
+        // Move orphaned categories to the target column
+        orphanedCategories.forEach(category => {
+            category.column = targetColumn;
+            category.position = ++maxPosition; // Assign next available position
+        });
+        
+        console.log(`Moved ${orphanedCategories.length} categories to column ${targetColumn}`);
+    }
+
     async handleColumnCountChange(e) {
         const newColumnCount = parseInt(e.target.value);
         if (newColumnCount >= 1 && newColumnCount <= 5) {
+            const oldColumnCount = this.columnCount;
+            
+            // If reducing column count, move orphaned categories to the last visible column
+            if (newColumnCount < oldColumnCount) {
+                this.relocateOrphanedCategories(newColumnCount);
+            }
+            
             this.columnCount = newColumnCount;
             await this.saveData();
             this.renderDashboard();
@@ -3297,7 +3524,8 @@ class LinkShelfDashboard {
                     
                     // Update the link with the fetched favicon
                     if (item.location === 'category') {
-                        this.categories[item.categoryIndex].links[item.linkIndex].faviconData = faviconData;
+                        const linksArray = this.categories[item.categoryIndex].links || this.categories[item.categoryIndex].bookmarks;
+                        linksArray[item.linkIndex].faviconData = faviconData;
                     } else if (item.location === 'subcategory') {
                         this.categories[item.categoryIndex].subcategories[item.subcategoryIndex].links[item.linkIndex].faviconData = faviconData;
                     }
@@ -3370,6 +3598,10 @@ class LinkShelfDashboard {
 
     // Modal Management
     openModal(modalId) {
+        // Close all dropdowns when opening modals
+        this.closeCategoryDropdowns();
+        this.closeSubcategoryDropdowns();
+        
         document.getElementById(modalId).classList.remove('hidden');
         document.body.style.overflow = 'hidden';
     }

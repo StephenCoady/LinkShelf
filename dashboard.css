@@ -1,3 +1,8 @@
+/* CSS Variables */
+:root {
+    --header-height: 59px; /* Standard header height */
+}
+
 /* Reset and Base Styles */
 * {
     margin: 0;
@@ -17,10 +22,14 @@ body {
 .header {
     background-color: #2A3642;
     border-bottom: 1px solid #3C4D5E;
-    padding: 10px 16px;
+    padding: 8px 16px 16px;
+    margin-left: 50px; /* Push header to the right of burger button */
     position: sticky;
     top: 0;
     z-index: 1000;
+    transition: margin-left 0.3s ease;
+    height: var(--header-height);
+    border-radius: 6px;
 }
 
 .header-content {
@@ -40,34 +49,52 @@ body {
     font-size: 1.2rem;
     font-weight: 600;
     color: #EBF4FF;
+    display: flex;
+    align-items: center;
+}
+
+.logo-image {
+    height: 45px;
+    width: auto;
 }
 
 .sidebar-toggle {
-    background: none;
+    position: fixed;
+    left: 0; /* Always at screen edge */
+    top: 12px; /* Better align with header content */
+    background: #2A3642;
     border: 1px solid #4A5F73;
     color: #C0C9D1;
     cursor: pointer;
-    padding: 6px 8px;
-    border-radius: 4px;
-    font-size: 14px;
-    transition: all 0.2s ease;
+    padding: 8px 12px;
+    border-radius: 0 6px 6px 0; /* Rounded on right side only */
+    font-size: 16px;
+    transition: all 0.3s ease;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 50px;
+    height: 40px;
+    z-index: 1002;
+    box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
 }
 
-.sidebar-toggle:hover {
-    background-color: #4A5F73;
-    border-color: #5A6F83;
-}
-
-.sidebar-toggle.active {
+/* Move button right when sidebar is open */
+body.sidebar-open .sidebar-toggle {
+    left: 250px; /* Position at the right edge of opened sidebar */
     background-color: #34C780;
     border-color: #34C780;
     color: white;
 }
+
+.sidebar-toggle:hover {
+    background-color: #34C780;
+    border-color: #34C780;
+    color: white;
+    transform: translateX(2px);
+}
+
+
 
 .header-actions {
     display: flex;
@@ -77,21 +104,46 @@ body {
 /* Inbox Sidebar */
 .inbox-sidebar {
     position: fixed;
-    left: -320px;
-    top: 0;
-    width: 300px;
-    height: 100vh;
-    background-color: #2A3642;
-    border-right: 1px solid #3C4D5E;
-    z-index: 999;
+    left: -250px; /* Hidden by default, 250px panel width */
+    top: 0; /* Start at same height as header */
+    width: 250px; /* Panel width */
+    height: 100vh; /* Full height */
+    background-color: transparent; /* Transparent background for overall container */
+    z-index: 1001; /* Above header */
     transition: left 0.3s ease;
     display: flex;
-    flex-direction: column;
+    flex-direction: column; /* Stack content vertically */
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
 }
 
+/* Disable transitions during initial load */
+.no-transitions .inbox-sidebar {
+    transition: none !important;
+}
+
+.no-transitions .sidebar-toggle {
+    transition: none !important;
+}
+
+.no-transitions .dashboard {
+    transition: none !important;
+}
+
+.no-transitions .header {
+    transition: none !important;
+}
+
 .inbox-sidebar.open {
-    left: 0;
+    left: 0; /* Show the panel fully */
+}
+
+.inbox-panel {
+    width: 250px;
+    height: 100vh;
+    background-color: #2A3642;
+    border-right: 1px solid #3C4D5E;
+    display: flex;
+    flex-direction: column;
 }
 
 .inbox-header {
@@ -219,6 +271,7 @@ body {
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.2s ease, visibility 0.2s ease;
+    z-index: 10;
 }
 
 .inbox-item:hover .inbox-actions {
@@ -231,10 +284,16 @@ body {
     border: none;
     color: #8B95A1;
     cursor: pointer;
-    padding: 3px;
+    padding: 2px;
     border-radius: 2px;
     font-size: 0.6rem;
     transition: all 0.2s ease;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
 }
 
 .inbox-item .inbox-action-btn:hover {
@@ -264,10 +323,14 @@ body {
     line-height: 1.4;
 }
 
-/* Push main content when sidebar is open */
+/* Push main content and header when sidebar is open */
 body.sidebar-open .dashboard {
-    margin-left: 300px;
+    margin-left: 250px; /* Reduced since button is now part of sidebar */
     transition: margin-left 0.3s ease;
+}
+
+body.sidebar-open .header {
+    margin-left: 300px; /* 250px sidebar + 50px burger button */
 }
 
 /* Favourites Bar */
@@ -367,8 +430,8 @@ body.sidebar-open .dashboard {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 48px;
+    height: 48px;
     background-color: #364554;
     border: 1px solid #4A5F73;
     border-radius: 4px;
@@ -426,8 +489,8 @@ body.sidebar-open .dashboard {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 48px;
+    height: 48px;
     background-color: #4A5F73;
     border: 1px dashed #5A6F83;
     border-radius: 4px;
@@ -451,6 +514,7 @@ body.sidebar-open .dashboard {
     right: -6px;
     display: none;
     gap: 2px;
+    z-index: 10;
 }
 
 /* Show actions only in edit mode */
@@ -465,26 +529,25 @@ body.sidebar-open .dashboard {
 
 /* Add edit indicator on hover in edit mode */
 .favourites-container.edit-mode .favourite-item:hover::before {
-    content: '✏️';
+    content: '';
     position: absolute;
     top: -8px;
     left: -8px;
-    font-size: 10px;
+    background-image: url('icons/app_icons/pencil_white.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
     background-color: #34C780;
-    color: white;
     border-radius: 50%;
     width: 16px;
     height: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     z-index: 10;
     box-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
 
 .favourite-item .action-btn {
-    width: 14px;
-    height: 14px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     border: none;
     cursor: pointer;
@@ -494,6 +557,8 @@ body.sidebar-open .dashboard {
     font-size: 9px;
     transition: all 0.2s ease;
     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    padding: 2px;
+    pointer-events: auto;
 }
 
 .favourite-item .edit-btn {
@@ -736,11 +801,11 @@ body.dragging-category .column-drop-zone:hover {
     font-weight: 600;
     color: #C0C9D1;
     padding-right: 80px; /* Make space for plus button and actions */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    min-width: 0; /* Allow shrinking for text truncation */
-    max-width: 100%; /* Ensure truncation works */
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    min-width: 0; /* Allow shrinking */
+    max-width: 100%;
+    line-height: 1.2;
 }
 
 .category-actions {
@@ -905,6 +970,7 @@ body.dragging-category .column-drop-zone:hover {
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.2s ease, visibility 0.2s ease;
+    z-index: 10;
 }
 
 .link-item:hover .link-actions, .bookmark-item:hover .bookmark-actions {
@@ -917,10 +983,16 @@ body.dragging-category .column-drop-zone:hover {
     border: none;
     color: #8B95A1;
     cursor: pointer;
-    padding: 3px;
+    padding: 2px;
     border-radius: 2px;
     font-size: 0.6rem;
     transition: all 0.2s ease;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
 }
 
 .link-action-btn:hover, .bookmark-action-btn:hover {
@@ -930,10 +1002,8 @@ body.dragging-category .column-drop-zone:hover {
 
 /* Subcategories */
 .subcategory {
-    margin-bottom: 12px;
-    border: 1px solid #3C4D5E;
-    border-radius: 6px;
-    background-color: #2A3642;
+    margin-bottom: 2px;
+    /* Remove border and background to blend with category */
 }
 
 .subcategory-header {
@@ -978,10 +1048,10 @@ body.dragging-category .column-drop-zone:hover {
     color: #C0C9D1;
     margin: 0;
     flex: 1;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
     min-width: 0;
+    line-height: 1.2;
 }
 
 .add-subcategory-link-btn {
@@ -1083,8 +1153,7 @@ body.dragging-category .column-drop-zone:hover {
 }
 
 .subcategory .link-item:hover {
-    border-left-color: #34C780;
-    background-color: rgba(52, 199, 128, 0.05);
+    border-left-color: transparent;
 }
 
 /* Legacy bookmark styles for backward compatibility */
@@ -1799,18 +1868,48 @@ body.dragging-inbox .subcategory-body.drag-over::before {
         height: 20px;
     }
     
+    /* Adjust header margin for mobile */
+    .header {
+        margin-left: 45px; /* Push header to the right of mobile burger button */
+    }
+    
     /* Adjust inbox sidebar for mobile */
     .inbox-sidebar {
-        width: 280px;
-        left: -300px;
+        width: 230px; /* Narrower on mobile */
+        left: -230px;
+        top: 0; /* Maintain full height on mobile */
+        height: 100vh;
+    }
+    
+    .inbox-panel {
+        width: 230px;
+    }
+    
+    .sidebar-toggle {
+        width: 45px;
+        height: 35px;
+        font-size: 14px;
+    }
+    
+    /* Mobile button positioning when open */
+    body.sidebar-open .sidebar-toggle {
+        left: 230px; /* Position at edge of narrower mobile sidebar */
     }
     
     body.sidebar-open .dashboard {
-        margin-left: 280px;
+        margin-left: 230px;
+    }
+    
+    body.sidebar-open .header {
+        margin-left: 275px; /* 230px sidebar + 45px burger button */
     }
     
     /* Stack header items on very small screens */
     @media (max-width: 400px) {
+        .header {
+            margin-left: 28px; /* Push header to the right of very small burger button */
+        }
+        
         .header-left {
             flex-direction: column;
             gap: 6px;
@@ -1821,11 +1920,43 @@ body.dragging-inbox .subcategory-body.drag-over::before {
             font-size: 1rem;
         }
         
+        .logo-image {
+            height: 35px; /* Smaller logo on very small screens */
+        }
+        
         .sidebar-toggle {
             width: 28px;
             height: 28px;
             font-size: 12px;
         }
+        
+        /* Very small screen header positioning when sidebar is open */
+        body.sidebar-open .header {
+            margin-left: 258px; /* 230px sidebar + 28px very small burger button */
+        }
+    }
+}
+
+/* New Item Flash Animation */
+.new-item-flash {
+    animation: newItemFlash 2.5s ease-out;
+}
+
+@keyframes newItemFlash {
+    0% {
+        background-color: rgba(52, 199, 128, 0.8);
+        transform: scale(1.02);
+        box-shadow: 0 0 15px rgba(52, 199, 128, 0.4);
+    }
+    20% {
+        background-color: rgba(52, 199, 128, 0.6);
+        transform: scale(1.01);
+        box-shadow: 0 0 10px rgba(52, 199, 128, 0.3);
+    }
+    100% {
+        background-color: transparent;
+        transform: scale(1);
+        box-shadow: none;
     }
 }
 

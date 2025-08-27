@@ -11,10 +11,9 @@
     <header class="header">
         <div class="header-content">
             <div class="header-left">
-                <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Inbox">
-                    ☰
-                </button>
-                <h1 class="logo">LinkShelf</h1>
+                <h1 class="logo">
+                    <img src="icons/logo-large-white.png" alt="LinkShelf" class="logo-image">
+                </h1>
             </div>
             <div class="header-actions">
                 <button id="create-category-btn" class="btn btn-primary">+ Create Category</button>
@@ -23,14 +22,21 @@
         </div>
     </header>
 
+    <!-- Sidebar Toggle Button (always visible) -->
+    <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Inbox">
+        ☰
+    </button>
+
     <!-- Inbox Sidebar -->
     <aside id="inbox-sidebar" class="inbox-sidebar">
-        <div class="inbox-header">
-            <h3>Inbox</h3>
-            <span class="inbox-count" id="inbox-count">0</span>
-        </div>
-        <div class="inbox-content" id="inbox-content">
-            <!-- Inbox items will be dynamically inserted here -->
+        <div class="inbox-panel">
+            <div class="inbox-header">
+                <h3>Inbox</h3>
+                <span class="inbox-count" id="inbox-count">0</span>
+            </div>
+            <div class="inbox-content" id="inbox-content">
+                <!-- Inbox items will be dynamically inserted here -->
+            </div>
         </div>
     </aside>
 
@@ -81,7 +87,7 @@
                 <form id="bookmark-form">
                     <div class="form-group">
                         <label for="bookmark-url">URL</label>
-                        <input type="url" id="bookmark-url" name="bookmarkUrl" placeholder="example.com (https:// will be added automatically)" required>
+                        <input type="text" id="bookmark-url" name="bookmarkUrl" placeholder="example.com (https:// will be added automatically)" required>
                     </div>
                     <div class="form-group">
                         <label for="bookmark-name">Name</label>
@@ -89,7 +95,7 @@
                     </div>
                     <div class="form-group">
                         <label for="bookmark-favicon-url">Custom Favicon URL (optional)</label>
-                        <input type="url" id="bookmark-favicon-url" name="bookmarkFaviconUrl" placeholder="example.com/icon.png (optional)">
+                        <input type="text" id="bookmark-favicon-url" name="bookmarkFaviconUrl" placeholder="example.com/icon.png (optional)">
                         <small class="form-help">Leave blank to auto-detect favicon. Useful for VPN/internal sites.</small>
                     </div>
                     <div class="form-group">
@@ -100,6 +106,7 @@
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" id="cancel-bookmark">Cancel</button>
+                        <button type="button" class="btn btn-danger hidden" id="delete-bookmark">Delete Bookmark</button>
                         <button type="submit" class="btn btn-primary" id="save-bookmark">Save Bookmark</button>
                     </div>
                 </form>
@@ -201,12 +208,12 @@
                 <form id="favourite-form">
                     <div class="form-group">
                         <label for="favourite-url">URL</label>
-                        <input type="url" id="favourite-url" name="url" placeholder="https://example.com" required>
+                        <input type="text" id="favourite-url" name="url" placeholder="example.com (https:// will be added automatically)" required>
                         <div id="favourite-url-status" class="url-status"></div>
                     </div>
                     <div class="form-group">
                         <label for="favourite-favicon">Custom Favicon URL (Optional)</label>
-                        <input type="url" id="favourite-favicon" name="favicon" placeholder="https://example.com/favicon.ico">
+                        <input type="text" id="favourite-favicon" name="favicon" placeholder="example.com/favicon.ico (optional)">
                         <small class="form-help">Leave blank to auto-detect favicon from the website</small>
                     </div>
                     <div class="form-actions">
