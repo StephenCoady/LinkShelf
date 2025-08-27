@@ -272,11 +272,13 @@ body.sidebar-open .sidebar-toggle {
     visibility: hidden;
     transition: opacity 0.2s ease, visibility 0.2s ease;
     z-index: 10;
+    pointer-events: none; /* Prevent interfering with link clicks */
 }
 
 .inbox-item:hover .inbox-actions {
     opacity: 1;
     visibility: visible;
+    pointer-events: auto; /* Enable interaction when visible */
 }
 
 .inbox-item .inbox-action-btn {
@@ -971,11 +973,13 @@ body.dragging-category .column-drop-zone:hover {
     visibility: hidden;
     transition: opacity 0.2s ease, visibility 0.2s ease;
     z-index: 10;
+    pointer-events: none; /* Prevent interfering with link clicks */
 }
 
 .link-item:hover .link-actions, .bookmark-item:hover .bookmark-actions {
     opacity: 1;
     visibility: visible;
+    pointer-events: auto; /* Enable interaction when visible */
 }
 
 .link-action-btn, .bookmark-action-btn {
