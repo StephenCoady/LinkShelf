@@ -650,6 +650,7 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
 
 .categories-container {
     display: flex;
+    flex-wrap: wrap;
     gap: 0;
     min-height: 400px;
     margin: 16px auto;
@@ -658,7 +659,8 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
     border: 2px solid #3C4D5E;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    overflow-x: auto;
+    overflow: visible;
+    align-content: flex-start; /* Align wrapped content to top */
 }
 
 /* Board columns - equal height, no gaps */
@@ -679,7 +681,7 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
 }
 
 .categories-container.columns-5 {
-    max-width: 1400px;
+    max-width: 1600px;
 }
 
 
@@ -690,13 +692,100 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
     flex-direction: column;
     gap: 8px;
     flex: 1 1 0;
-    min-width: 250px;
+    min-width: 225px; /* Reduced by ~10% from 250px */
     max-width: 350px;
     min-height: 360px;
     background-color: #2A3642;
     border-right: 1px solid #3C4D5E;
     padding: 12px;
     position: relative;
+}
+
+/* Responsive column layout - maintains logical order while stacking visually */
+@media (max-width: 1200px) {
+    .categories-container.columns-5 .grid-column {
+        flex: 1 1 calc(50% - 0.5px); /* 2 columns per row for 5-column layout */
+        min-width: 0; /* Allow columns to shrink below min-width when stacked */
+        max-width: none; /* Remove max-width constraint for equal sizing */
+    }
+    
+    .categories-container.columns-4 .grid-column {
+        flex: 1 1 calc(50% - 0.5px); /* 2 columns per row for 4-column layout */
+        min-width: 0; /* Allow columns to shrink below min-width when stacked */
+        max-width: none; /* Remove max-width constraint for equal sizing */
+    }
+}
+
+@media (max-width: 900px) {
+    .categories-container.columns-5 .grid-column,
+    .categories-container.columns-4 .grid-column,
+    .categories-container.columns-3 .grid-column {
+        flex: 1 1 calc(50% - 0.5px); /* 2 columns per row for 3, 4, and 5-column layouts */
+        min-width: 0; /* Allow columns to shrink below min-width when stacked */
+        max-width: none; /* Remove max-width constraint for equal sizing */
+    }
+}
+
+@media (max-width: 600px) {
+    .categories-container .grid-column {
+        flex: 1 1 100%; /* Single column on very narrow screens */
+        border-right: none;
+        border-bottom: 1px solid #3C4D5E;
+        min-width: 0; /* Allow full shrinking */
+        max-width: none;
+        border-radius: 0; /* Reset border radius for stacked layout */
+    }
+    
+    .categories-container .grid-column:first-child {
+        border-top-left-radius: 6px;
+        border-top-right-radius: 6px;
+    }
+    
+    .categories-container .grid-column:last-child {
+        border-bottom: none;
+        border-bottom-left-radius: 6px;
+        border-bottom-right-radius: 6px;
+    }
+}
+
+/* Handle borders for wrapped columns at different breakpoints */
+@media (max-width: 1200px) and (min-width: 901px) {
+    .categories-container.columns-5 .grid-column:nth-child(2n),
+    .categories-container.columns-4 .grid-column:nth-child(2n) {
+        border-right: none; /* Remove right border from every 2nd column */
+    }
+    
+    .categories-container.columns-5 .grid-column:nth-child(2n+1):not(:last-child),
+    .categories-container.columns-4 .grid-column:nth-child(2n+1):not(:last-child) {
+        border-right: 1px solid #3C4D5E; /* Ensure left columns keep their border, except if it's the last column */
+    }
+    
+    /* Special case: if last column is odd (like 5th column), remove its border */
+    .categories-container.columns-5 .grid-column:nth-child(5),
+    .categories-container.columns-4 .grid-column:nth-child(4) {
+        border-right: none;
+    }
+}
+
+@media (max-width: 900px) and (min-width: 601px) {
+    .categories-container.columns-5 .grid-column:nth-child(2n),
+    .categories-container.columns-4 .grid-column:nth-child(2n),
+    .categories-container.columns-3 .grid-column:nth-child(2n) {
+        border-right: none; /* Remove right border from every 2nd column */
+    }
+    
+    .categories-container.columns-5 .grid-column:nth-child(2n+1):not(:last-child),
+    .categories-container.columns-4 .grid-column:nth-child(2n+1):not(:last-child),
+    .categories-container.columns-3 .grid-column:nth-child(2n+1):not(:last-child) {
+        border-right: 1px solid #3C4D5E; /* Ensure left columns keep their border, except if it's the last column */
+    }
+    
+    /* Special cases: if last column is odd, remove its border */
+    .categories-container.columns-5 .grid-column:nth-child(5),
+    .categories-container.columns-4 .grid-column:nth-child(4),
+    .categories-container.columns-3 .grid-column:nth-child(3) {
+        border-right: none;
+    }
 }
 
 .grid-column:last-child {
@@ -1762,86 +1851,14 @@ body.dragging-inbox .subcategory-body.drag-over::before {
     margin-bottom: 16px;
 }
 
-/* Responsive Breakpoints */
-/* Large screens: Allow up to 5 columns if set by user, otherwise auto-fit */
-@media (min-width: 1400px) {
-    .categories-container:not([class*="columns-"]) {
-        grid-template-columns: repeat(auto-fit, minmax(200px, 300px));
-    }
-}
+/* Legacy responsive breakpoints - now handled by flexbox wrapping above */
 
-/* Medium-large screens: Max 4 columns, allow columns to shrink */
-@media (max-width: 1399px) and (min-width: 1000px) {
-    .categories-container.columns-5 {
-        grid-template-columns: repeat(4, minmax(180px, 280px)) !important;
-    }
-    .categories-container:not([class*="columns-"]) {
-        grid-template-columns: repeat(auto-fit, minmax(180px, 280px));
-    }
-}
-
-/* Medium screens: Max 3 columns, further shrink */
-@media (max-width: 999px) and (min-width: 750px) {
-    .categories-container.columns-4,
-    .categories-container.columns-5 {
-        grid-template-columns: repeat(3, minmax(160px, 260px)) !important;
-    }
-    .categories-container:not([class*="columns-"]) {
-        grid-template-columns: repeat(auto-fit, minmax(160px, 260px));
-    }
-}
-
-    /* Tablet screens: Adjust board for smaller screens */
-@media (max-width: 749px) and (min-width: 500px) {
-    .categories-container {
-        padding: 12px;
-        min-height: 400px;
-        max-width: 90%;
-    }
-    
-    .grid-column {
-        min-height: 360px;
-        padding: 8px;
-        min-width: 200px;
-        max-width: 300px;
-    }
-}
-
-/* Mobile screens: Single column board */
+/* Mobile-specific adjustments - now integrated into main responsive system above */
 @media (max-width: 499px) {
     .header-content {
         flex-direction: column;
         gap: 10px;
         text-align: center;
-    }
-    
-    .categories-container {
-        flex-direction: column !important;
-        padding: 8px;
-        min-height: 300px;
-        margin: 8px;
-        max-width: none;
-    }
-    
-    .grid-column {
-        border-right: none;
-        border-bottom: 1px solid #3C4D5E;
-        border-radius: 0;
-        min-height: 200px;
-        padding: 8px;
-    }
-    
-    .grid-column:first-child {
-        border-top-left-radius: 6px;
-        border-top-right-radius: 6px;
-        border-bottom-left-radius: 0;
-    }
-    
-    .grid-column:last-child {
-        border-bottom-left-radius: 6px;
-        border-bottom-right-radius: 6px;
-        border-top-right-radius: 0;
-        border-bottom: none;
     }
     
     .modal-content {

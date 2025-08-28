@@ -89,7 +89,7 @@ chrome.runtime.onInstalled.addListener(() => {
     
     chrome.contextMenus.create({
         id: 'open-linkshelf',
-        title: 'Open LinkShelf Dashboard',
+        title: 'Add to LinkShelf',
         contexts: ['page']
     });
 });
