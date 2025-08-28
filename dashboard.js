@@ -1402,19 +1402,37 @@ class LinkShelfDashboard {
         
         const fallbackIcon = this.getFallbackIcon();
         
+        // Add timestamp display if available
+        const timeDisplay = item.addedAt ? 
+            `<div class="inbox-timestamp" title="Added ${new Date(item.addedAt).toLocaleString()}">
+                ${this.getRelativeTime(item.addedAt)}
+            </div>` : '';
+        
         return `
             <div class="inbox-item" data-inbox-index="${index}" draggable="true">
-                <a href="${this.escapeHtml(item.url)}" ${this.openLinksInNewTab ? 'target="_blank"' : ''} class="inbox-link">
-                    <img class="inbox-favicon" src="${faviconSrc}" alt="Favicon" data-fallback="${fallbackIcon}">
-                    <span class="inbox-title">${this.escapeHtml(item.name)}</span>
-                </a>
-                <div class="inbox-actions">
-                    <button class="inbox-action-btn inbox-edit-btn" data-inbox-index="${index}" title="Edit Inbox Item">
-                        <img src="icons/app_icons/pencil_white.png" alt="Edit" style="width: 16px; height: 16px;">
-                    </button>
-                    <button class="inbox-action-btn inbox-delete-btn" data-inbox-index="${index}" title="Delete Inbox Item">
-                        <img src="icons/app_icons/trash_white.png" alt="Delete" style="width: 16px; height: 16px;">
-                    </button>
+                <div class="inbox-item-content">
+                    <div class="inbox-main-row">
+                        <a href="${this.escapeHtml(item.url)}" ${this.openLinksInNewTab ? 'target="_blank"' : ''} class="inbox-link">
+                            <img class="inbox-favicon" src="${faviconSrc}" alt="Favicon" data-fallback="${fallbackIcon}">
+                            <span class="inbox-title">${this.escapeHtml(item.name)}</span>
+                        </a>
+                        <div class="inbox-main-actions">
+                            <button class="inbox-action-btn inbox-edit-btn" data-inbox-index="${index}" title="Edit Inbox Item">
+                                <img src="icons/app_icons/pencil_white.png" alt="Edit" style="width: 16px; height: 16px;">
+                            </button>
+                            <button class="inbox-action-btn inbox-delete-btn" data-inbox-index="${index}" title="Delete Inbox Item">
+                                <img src="icons/app_icons/trash_white.png" alt="Delete" style="width: 16px; height: 16px;">
+                            </button>
+                        </div>
+                    </div>
+                    <div class="inbox-item-meta">
+                        ${timeDisplay}
+                        ${this.categories.length > 0 ? `
+                        <button class="inbox-action-btn inbox-send-to-btn" data-inbox-index="${index}" title="Send to category">
+                            →
+                        </button>
+                        ` : ''}
+                    </div>
                 </div>
             </div>
         `;
@@ -1442,6 +1460,16 @@ class LinkShelfDashboard {
                 const button = e.currentTarget;
                 const inboxIndex = parseInt(button.dataset.inboxIndex);
                 this.deleteInboxItem(inboxIndex);
+            });
+        });
+
+        // Send to category button
+        document.querySelectorAll('.inbox-send-to-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const inboxIndex = parseInt(btn.dataset.inboxIndex);
+                this.showCategorizeOptions(inboxIndex, btn);
             });
         });
 
@@ -1574,6 +1602,125 @@ class LinkShelfDashboard {
         });
     }
 
+    // Quick categorize inbox item
+    quickCategorizeInboxItem(inboxIndex, categoryIndex) {
+        const item = this.inbox[inboxIndex];
+        if (!item || !this.categories[categoryIndex]) {
+            console.error('Invalid inbox item or category');
+            return;
+        }
+
+        // Create link object
+        const link = {
+            id: item.id,
+            name: item.name,
+            url: item.url,
+            faviconData: item.faviconData,
+            customFaviconUrl: item.customFaviconUrl
+        };
+
+        // Add to category
+        if (!this.categories[categoryIndex].links) {
+            this.categories[categoryIndex].links = [];
+        }
+        this.categories[categoryIndex].links.push(link);
+
+        // Remove from inbox
+        this.inbox.splice(inboxIndex, 1);
+
+        // Save and re-render
+        this.saveData();
+        this.renderDashboard();
+        this.showToast(`Added to "${this.categories[categoryIndex].name}"`, 'success');
+    }
+
+    // Show categorize options in a dropdown
+    showCategorizeOptions(inboxIndex, buttonElement) {
+        const item = this.inbox[inboxIndex];
+        if (!item) return;
+
+        // Create dropdown menu
+        const dropdown = document.createElement('div');
+        dropdown.className = 'category-dropdown-menu show';
+        dropdown.style.position = 'absolute';
+        dropdown.style.zIndex = '99999';
+
+        // Position dropdown relative to button
+        const rect = buttonElement.getBoundingClientRect();
+        dropdown.style.top = (rect.bottom + 5) + 'px';
+        dropdown.style.left = rect.left + 'px';
+
+        // Add category options
+        this.categories.forEach((category, categoryIndex) => {
+            const option = document.createElement('button');
+            option.className = 'dropdown-item';
+            option.textContent = category.name;
+            option.addEventListener('click', () => {
+                this.quickCategorizeInboxItem(inboxIndex, categoryIndex);
+                dropdown.remove();
+            });
+            dropdown.appendChild(option);
+
+            // Add subcategories if they exist
+            if (category.subcategories) {
+                category.subcategories.forEach((subcategory, subIndex) => {
+                    const subOption = document.createElement('button');
+                    subOption.className = 'dropdown-item';
+                    subOption.style.paddingLeft = '24px';
+                    subOption.textContent = `↳ ${subcategory.name}`;
+                    subOption.addEventListener('click', () => {
+                        this.quickCategorizeToSubcategory(inboxIndex, categoryIndex, subIndex);
+                        dropdown.remove();
+                    });
+                    dropdown.appendChild(subOption);
+                });
+            }
+        });
+
+        // Add close handler
+        const closeDropdown = (e) => {
+            if (!dropdown.contains(e.target)) {
+                dropdown.remove();
+                document.removeEventListener('click', closeDropdown);
+            }
+        };
+
+        document.body.appendChild(dropdown);
+        setTimeout(() => document.addEventListener('click', closeDropdown), 100);
+    }
+
+    // Quick categorize to subcategory
+    quickCategorizeToSubcategory(inboxIndex, categoryIndex, subcategoryIndex) {
+        const item = this.inbox[inboxIndex];
+        if (!item || !this.categories[categoryIndex]?.subcategories?.[subcategoryIndex]) {
+            console.error('Invalid inbox item, category, or subcategory');
+            return;
+        }
+
+        // Create link object
+        const link = {
+            id: item.id,
+            name: item.name,
+            url: item.url,
+            faviconData: item.faviconData,
+            customFaviconUrl: item.customFaviconUrl
+        };
+
+        // Add to subcategory
+        if (!this.categories[categoryIndex].subcategories[subcategoryIndex].links) {
+            this.categories[categoryIndex].subcategories[subcategoryIndex].links = [];
+        }
+        this.categories[categoryIndex].subcategories[subcategoryIndex].links.push(link);
+
+        // Remove from inbox
+        this.inbox.splice(inboxIndex, 1);
+
+        // Save and re-render
+        this.saveData();
+        this.renderDashboard();
+        this.showToast(`Added to "${this.categories[categoryIndex].name} → ${this.categories[categoryIndex].subcategories[subcategoryIndex].name}"`, 'success');
+    }
+
     async moveInboxItemToCategory(inboxIndex, targetCategoryIndex) {
         // Use the more precise positioning version
         const targetPosition = this.categories[targetCategoryIndex].bookmarks.length;
@@ -1606,37 +1753,84 @@ class LinkShelfDashboard {
         this.showToast(`Moved "${inboxItem.name}" to ${this.categories[targetCategoryIndex].name}`, 'success');
     }
 
-    async moveBookmarkToInbox(categoryIndex, bookmarkIndex) {
-        const bookmark = this.categories[categoryIndex].bookmarks[bookmarkIndex];
-        if (!bookmark) {
-            console.error('Bookmark not found at position');
+    async moveBookmarkToInbox(categoryIndex, linkIndex) {
+        const link = this.categories[categoryIndex].links?.[linkIndex] || this.categories[categoryIndex].bookmarks?.[linkIndex];
+        if (!link) {
+            console.error('Link not found at position');
             return;
         }
 
         // Check if item already exists in inbox
-        const exists = this.inbox.some(item => item.url === bookmark.url);
+        const exists = this.inbox.some(item => item.url === link.url);
         if (exists) {
             this.showToast('Link already in inbox', 'info');
             return;
         }
 
-        // Create inbox item from bookmark
+        // Create inbox item from link
         const inboxItem = {
-            id: bookmark.id,
-            name: bookmark.name,
-            url: bookmark.url,
-            faviconData: bookmark.faviconData
+            id: link.id,
+            name: link.name,
+            url: link.url,
+            faviconData: link.faviconData,
+            customFaviconUrl: link.customFaviconUrl,
+            addedAt: Date.now()
         };
 
-        // Add to inbox
+        // Add to inbox (at beginning for newest first)
         this.inbox.unshift(inboxItem);
 
-        // Remove from category
-        this.categories[categoryIndex].bookmarks.splice(bookmarkIndex, 1);
+        // Remove from category (support both new 'links' and legacy 'bookmarks' structure)
+        if (this.categories[categoryIndex].links) {
+            this.categories[categoryIndex].links.splice(linkIndex, 1);
+        } else if (this.categories[categoryIndex].bookmarks) {
+            this.categories[categoryIndex].bookmarks.splice(linkIndex, 1);
+        }
 
         await this.saveData();
         this.renderDashboard();
-        this.showToast(`Moved "${bookmark.name}" to inbox`, 'success');
+        this.showToast(`Moved "${link.name}" to inbox`, 'success');
+    }
+
+    async moveLinkFromSubcategoryToInbox(categoryIndex, subcategoryIndex, linkIndex) {
+        const subcategory = this.categories[categoryIndex]?.subcategories?.[subcategoryIndex];
+        if (!subcategory) {
+            console.error('Subcategory not found');
+            return;
+        }
+
+        const link = subcategory.links?.[linkIndex];
+        if (!link) {
+            console.error('Link not found in subcategory');
+            return;
+        }
+
+        // Check if item already exists in inbox
+        const exists = this.inbox.some(item => item.url === link.url);
+        if (exists) {
+            this.showToast('Link already in inbox', 'info');
+            return;
+        }
+
+        // Create inbox item from link
+        const inboxItem = {
+            id: link.id,
+            name: link.name,
+            url: link.url,
+            faviconData: link.faviconData,
+            customFaviconUrl: link.customFaviconUrl,
+            addedAt: Date.now()
+        };
+
+        // Add to inbox (at beginning for newest first)
+        this.inbox.unshift(inboxItem);
+
+        // Remove from subcategory
+        subcategory.links.splice(linkIndex, 1);
+
+        await this.saveData();
+        this.renderDashboard();
+        this.showToast(`Moved "${link.name}" to inbox`, 'success');
     }
 
     setupInboxDropZone() {
@@ -1663,7 +1857,7 @@ class LinkShelfDashboard {
     }
 
     handleInboxDragOver(e) {
-        if (this.draggedType !== 'bookmark') return;
+        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark') return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
@@ -1685,7 +1879,7 @@ class LinkShelfDashboard {
     }
 
     handleInboxDrop(e) {
-        if (this.draggedType !== 'bookmark' || !this.draggedElement) return;
+        if ((this.draggedType !== 'link' && this.draggedType !== 'bookmark') || !this.draggedElement) return;
         e.preventDefault();
         e.stopPropagation();
         
@@ -1696,9 +1890,18 @@ class LinkShelfDashboard {
 
         // Get source information
         const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
-        const sourceBookmarkIndex = parseInt(this.draggedElement.dataset.bookmarkIndex);
+        const sourceSubcategoryIndex = this.draggedElement.dataset.subcategoryIndex ? 
+            parseInt(this.draggedElement.dataset.subcategoryIndex) : null;
+        const sourceLinkIndex = parseInt(this.draggedElement.dataset.linkIndex || this.draggedElement.dataset.bookmarkIndex);
         
-        this.moveBookmarkToInbox(sourceCategoryIndex, sourceBookmarkIndex);
+        // Handle different source types
+        if (sourceSubcategoryIndex !== null) {
+            // Moving from subcategory to inbox
+            this.moveLinkFromSubcategoryToInbox(sourceCategoryIndex, sourceSubcategoryIndex, sourceLinkIndex);
+        } else {
+            // Moving from main category to inbox
+            this.moveBookmarkToInbox(sourceCategoryIndex, sourceLinkIndex);
+        }
     }
 
     // Favourites Rendering
@@ -2228,6 +2431,21 @@ class LinkShelfDashboard {
     
     escapeRegex(string) {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    
+    // Helper method for relative time display
+    getRelativeTime(timestamp) {
+        const now = Date.now();
+        const diff = now - timestamp;
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(diff / 3600000);
+        const days = Math.floor(diff / 86400000);
+        
+        if (minutes < 1) return 'Just now';
+        if (minutes < 60) return `${minutes}m ago`;
+        if (hours < 24) return `${hours}h ago`;
+        if (days < 7) return `${days}d ago`;
+        return new Date(timestamp).toLocaleDateString();
     }
     
     // Global Keyboard Shortcuts

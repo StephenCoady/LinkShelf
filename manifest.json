@@ -11,7 +11,8 @@
   "permissions": [
     "storage",
     "favicon",
-    "contextMenus"
+    "contextMenus",
+    "activeTab"
   ],
   
   "host_permissions": [
@@ -32,5 +33,15 @@
 
   "background": {
     "service_worker": "background.js"
+  },
+  
+  "commands": {
+    "quick-add-bookmark": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+B",
+        "mac": "Command+Shift+B"
+      },
+      "description": "Quick add current page to LinkShelf inbox"
+    }
   }
 }

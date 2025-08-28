@@ -82,7 +82,7 @@ body {
 
 /* Move button right when sidebar is open */
 body.sidebar-open .sidebar-toggle {
-    left: 250px; /* Position at the right edge of opened sidebar */
+    left: 280px; /* Position at the right edge of opened sidebar */
     background-color: #34C780;
     border-color: #34C780;
     color: white;
@@ -200,9 +200,9 @@ body.sidebar-open .sidebar-toggle {
 /* Inbox Sidebar */
 .inbox-sidebar {
     position: fixed;
-    left: -250px; /* Hidden by default, 250px panel width */
+    left: -280px; /* Hidden by default, 280px panel width */
     top: 0; /* Start at same height as header */
-    width: 250px; /* Panel width */
+    width: 280px; /* Panel width - increased for better spacing */
     height: 100vh; /* Full height */
     background-color: transparent; /* Transparent background for overall container */
     z-index: 1001; /* Above header */
@@ -234,7 +234,7 @@ body.sidebar-open .sidebar-toggle {
 }
 
 .inbox-panel {
-    width: 250px;
+    width: 280px;
     height: 100vh;
     background-color: #2A3642;
     border-right: 1px solid #3C4D5E;
@@ -306,13 +306,53 @@ body.sidebar-open .sidebar-toggle {
     background-color: transparent;
     padding: 8px;
     border-radius: 4px;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
     position: relative;
     border: 1px solid transparent;
+}
+
+.inbox-item-content {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    overflow: hidden; /* Prevent any child overflow */
+    box-sizing: border-box;
+}
+
+.inbox-main-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    overflow: hidden; /* Prevent overflow */
+    box-sizing: border-box;
+}
+
+.inbox-main-actions {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.inbox-item:hover .inbox-main-actions {
+    opacity: 1;
+    visibility: visible;
+}
+
+.inbox-item-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    min-height: 20px;
+    overflow: hidden; /* Prevent overflow */
+    box-sizing: border-box;
 }
 
 .inbox-item:hover {
@@ -330,17 +370,44 @@ body.sidebar-open .sidebar-toggle {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex: 1;
     text-decoration: none;
     color: inherit;
     min-width: 0;
-    padding-right: 15px;
-    transition: padding-right 0.2s ease;
+    flex: 1;
+    margin-right: 8px; /* Space for hover actions */
 }
 
-.inbox-item:hover .inbox-link {
-    padding-right: 45px;
+.inbox-timestamp {
+    font-size: 0.6rem;
+    color: #8B95A1;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
+
+/* Removed duplicate inbox-actions - now using inbox-main-actions and inbox-item-meta */
+
+.inbox-send-to-btn {
+    background-color: #34C780;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.65rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    flex-shrink: 0; /* Don't shrink */
+    max-width: 80px; /* Limit width to prevent overflow */
+    box-sizing: border-box;
+}
+
+.inbox-send-to-btn:hover {
+    background-color: #2EAF70;
+    transform: translateY(-1px);
+}
+
+/* Removed old quick actions styles - now using cleaner "Send to" button */
 
 .inbox-item .inbox-favicon {
     width: 16px;
@@ -357,24 +424,6 @@ body.sidebar-open .sidebar-toggle {
     text-overflow: ellipsis;
     min-width: 0;
     color: #C0C9D1;
-}
-
-.inbox-item .inbox-actions {
-    display: flex;
-    gap: 3px;
-    position: absolute;
-    right: 8px;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
-    z-index: 10;
-    pointer-events: none; /* Prevent interfering with link clicks */
-}
-
-.inbox-item:hover .inbox-actions {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto; /* Enable interaction when visible */
 }
 
 .inbox-item .inbox-action-btn {
@@ -423,12 +472,12 @@ body.sidebar-open .sidebar-toggle {
 
 /* Push main content and header when sidebar is open */
 body.sidebar-open .dashboard {
-    margin-left: 250px; /* Reduced since button is now part of sidebar */
+    margin-left: 280px; /* Sidebar width */
     transition: margin-left 0.3s ease;
 }
 
 body.sidebar-open .header {
-    margin-left: 300px; /* 250px sidebar + 50px burger button */
+    margin-left: 330px; /* 280px sidebar + 50px burger button */
 }
 
 /* Favourites Bar */
