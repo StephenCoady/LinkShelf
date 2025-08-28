@@ -17,6 +17,8 @@ class LinkShelfDashboard {
         this.draggedElement = null;
         this.draggedType = null;
         this.sidebarOpen = this.loadSidebarState();
+        this.searchQuery = '';
+        this.searchTimeout = null;
     }
 
     // Initialize the dashboard
@@ -214,6 +216,13 @@ class LinkShelfDashboard {
         document.getElementById('create-category-btn').addEventListener('click', () => this.openCreateCategoryModal());
         document.getElementById('settings-btn').addEventListener('click', () => this.openSettingsModal());
         document.getElementById('sidebar-toggle').addEventListener('click', () => this.toggleSidebar());
+        
+        // Search functionality
+        document.getElementById('global-search').addEventListener('input', (e) => this.handleSearchInput(e));
+        document.getElementById('search-clear').addEventListener('click', () => this.clearSearch());
+        
+        // Global keyboard shortcuts
+        document.addEventListener('keydown', (e) => this.handleGlobalKeyDown(e));
 
         // Category modal
         document.getElementById('create-category-form').addEventListener('submit', (e) => this.handleCategoryFormSubmit(e));
@@ -1963,6 +1972,288 @@ class LinkShelfDashboard {
             this.showToast('Edit mode enabled - Click on favourites to edit, use action buttons to delete', 'info');
         } else {
             this.showToast('Edit mode disabled', 'info');
+        }
+    }
+
+    // Search Functionality
+    handleSearchInput(e) {
+        const query = e.target.value.trim();
+        
+        // Clear existing timeout
+        if (this.searchTimeout) {
+            clearTimeout(this.searchTimeout);
+        }
+        
+        // Debounce search to avoid excessive filtering
+        this.searchTimeout = setTimeout(() => {
+            this.performSearch(query);
+        }, 300);
+        
+        // Show/hide clear button
+        const clearBtn = document.getElementById('search-clear');
+        if (query.length > 0) {
+            clearBtn.classList.remove('hidden');
+        } else {
+            clearBtn.classList.add('hidden');
+        }
+    }
+    
+    performSearch(query) {
+        this.searchQuery = query.toLowerCase();
+        
+        if (this.searchQuery.length === 0) {
+            this.clearSearchResults();
+            return;
+        }
+        
+        // Add search-active class to body for styling
+        document.body.classList.add('search-active');
+        
+        // Search through all locations
+        this.searchCategories();
+        this.searchFavourites();
+        this.searchInbox();
+    }
+    
+    searchCategories() {
+        // Search through categories, subcategories, and their links
+        this.categories.forEach((category, categoryIndex) => {
+            const categoryElement = document.querySelector(`[data-category-index="${categoryIndex}"]`);
+            if (!categoryElement) return;
+            
+            let categoryHasMatch = false;
+            
+            // Check if category name matches
+            if (category.name.toLowerCase().includes(this.searchQuery)) {
+                categoryHasMatch = true;
+                this.highlightText(categoryElement.querySelector('.category-title'), category.name, this.searchQuery);
+            }
+            
+            // Check top-level links
+            if (category.links) {
+                category.links.forEach((link, linkIndex) => {
+                    const linkElement = categoryElement.querySelector(`[data-link-index="${linkIndex}"]`);
+                    if (linkElement && this.linkMatchesSearch(link)) {
+                        categoryHasMatch = true;
+                        linkElement.classList.add('search-match');
+                        this.highlightLinkText(linkElement, link, this.searchQuery);
+                    } else if (linkElement) {
+                        linkElement.classList.remove('search-match');
+                        this.removeHighlights(linkElement);
+                    }
+                });
+            }
+            
+            // Check subcategories and their links
+            if (category.subcategories) {
+                category.subcategories.forEach((subcategory, subcategoryIndex) => {
+                    let subcategoryHasMatch = false;
+                    
+                    // Check subcategory name
+                    if (subcategory.name.toLowerCase().includes(this.searchQuery)) {
+                        subcategoryHasMatch = true;
+                        categoryHasMatch = true;
+                        const subcategoryElement = categoryElement.querySelector(`[data-subcategory-index="${subcategoryIndex}"]`);
+                        if (subcategoryElement) {
+                            this.highlightText(subcategoryElement.querySelector('.subcategory-title'), subcategory.name, this.searchQuery);
+                        }
+                    }
+                    
+                    // Check subcategory links
+                    if (subcategory.links) {
+                        subcategory.links.forEach((link, linkIndex) => {
+                            const linkElement = categoryElement.querySelector(`[data-subcategory-index="${subcategoryIndex}"] [data-link-index="${linkIndex}"]`);
+                            if (linkElement && this.linkMatchesSearch(link)) {
+                                subcategoryHasMatch = true;
+                                categoryHasMatch = true;
+                                linkElement.classList.add('search-match');
+                                this.highlightLinkText(linkElement, link, this.searchQuery);
+                            } else if (linkElement) {
+                                linkElement.classList.remove('search-match');
+                                this.removeHighlights(linkElement);
+                            }
+                        });
+                    }
+                });
+            }
+            
+            // Apply match class to category
+            if (categoryHasMatch) {
+                categoryElement.classList.add('search-match');
+            } else {
+                categoryElement.classList.remove('search-match');
+                this.removeHighlights(categoryElement);
+            }
+        });
+    }
+    
+    searchFavourites() {
+        this.favourites.forEach((favourite, index) => {
+            const favouriteElement = document.querySelector(`[data-favourite-index="${index}"]`);
+            if (!favouriteElement) return;
+            
+            if (this.linkMatchesSearch(favourite)) {
+                favouriteElement.classList.add('search-match');
+                // Note: favourites only show favicon, so no text highlighting needed
+            } else {
+                favouriteElement.classList.remove('search-match');
+            }
+        });
+    }
+    
+    searchInbox() {
+        this.inbox.forEach((item, index) => {
+            const inboxElement = document.querySelector(`[data-inbox-index="${index}"]`);
+            if (!inboxElement) return;
+            
+            if (this.linkMatchesSearch(item)) {
+                inboxElement.classList.add('search-match');
+                this.highlightLinkText(inboxElement, item, this.searchQuery);
+            } else {
+                inboxElement.classList.remove('search-match');
+                this.removeHighlights(inboxElement);
+            }
+        });
+    }
+    
+    linkMatchesSearch(link) {
+        const query = this.searchQuery;
+        return (
+            link.name.toLowerCase().includes(query) ||
+            link.url.toLowerCase().includes(query) ||
+            this.extractDomain(link.url).toLowerCase().includes(query)
+        );
+    }
+    
+    extractDomain(url) {
+        try {
+            return new URL(url).hostname.replace('www.', '');
+        } catch {
+            return url;
+        }
+    }
+    
+    highlightText(element, text, query) {
+        if (!element || !text || !query) return;
+        
+        const regex = new RegExp(`(${this.escapeRegex(query)})`, 'gi');
+        const highlightedText = text.replace(regex, '<span class="search-highlight">$1</span>');
+        element.innerHTML = highlightedText;
+    }
+    
+    highlightLinkText(linkElement, link, query) {
+        const titleElement = linkElement.querySelector('.link-title, .bookmark-title, .inbox-title');
+        if (titleElement) {
+            this.highlightText(titleElement, link.name, query);
+        }
+    }
+    
+    removeHighlights(element) {
+        const highlights = element.querySelectorAll('.search-highlight');
+        highlights.forEach(highlight => {
+            highlight.outerHTML = highlight.innerHTML;
+        });
+        
+        // Also restore original text for category and subcategory titles
+        const categoryTitle = element.querySelector('.category-title');
+        if (categoryTitle) {
+            const categoryIndex = parseInt(element.dataset.categoryIndex);
+            if (this.categories[categoryIndex]) {
+                categoryTitle.textContent = this.categories[categoryIndex].name;
+            }
+        }
+        
+        const subcategoryTitle = element.querySelector('.subcategory-title');
+        if (subcategoryTitle) {
+            const categoryIndex = parseInt(element.dataset.categoryIndex);
+            const subcategoryIndex = parseInt(element.dataset.subcategoryIndex);
+            if (this.categories[categoryIndex]?.subcategories?.[subcategoryIndex]) {
+                subcategoryTitle.textContent = this.categories[categoryIndex].subcategories[subcategoryIndex].name;
+            }
+        }
+        
+        const linkTitles = element.querySelectorAll('.link-title, .bookmark-title, .inbox-title');
+        linkTitles.forEach(titleElement => {
+            const linkElement = titleElement.closest('[data-link-index], [data-inbox-index]');
+            if (linkElement) {
+                const categoryIndex = linkElement.dataset.categoryIndex;
+                const subcategoryIndex = linkElement.dataset.subcategoryIndex;
+                const linkIndex = linkElement.dataset.linkIndex;
+                const inboxIndex = linkElement.dataset.inboxIndex;
+                
+                let linkData = null;
+                if (inboxIndex !== undefined) {
+                    linkData = this.inbox[parseInt(inboxIndex)];
+                } else if (subcategoryIndex !== undefined) {
+                    linkData = this.categories[parseInt(categoryIndex)]?.subcategories?.[parseInt(subcategoryIndex)]?.links?.[parseInt(linkIndex)];
+                } else {
+                    linkData = this.categories[parseInt(categoryIndex)]?.links?.[parseInt(linkIndex)];
+                }
+                
+                if (linkData) {
+                    titleElement.textContent = linkData.name;
+                }
+            }
+        });
+    }
+    
+    clearSearch() {
+        // Clear input
+        document.getElementById('global-search').value = '';
+        document.getElementById('search-clear').classList.add('hidden');
+        
+        // Clear search state
+        this.clearSearchResults();
+    }
+    
+    clearSearchResults() {
+        this.searchQuery = '';
+        
+        // Remove search-active class
+        document.body.classList.remove('search-active');
+        
+        // Remove all search-related classes
+        document.querySelectorAll('.search-match').forEach(element => {
+            element.classList.remove('search-match');
+        });
+        
+        // Remove all highlights
+        document.querySelectorAll('.search-highlight').forEach(highlight => {
+            highlight.outerHTML = highlight.innerHTML;
+        });
+        
+        // Re-render to restore original text
+        this.renderDashboard();
+    }
+    
+    escapeRegex(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+    
+    // Global Keyboard Shortcuts
+    handleGlobalKeyDown(e) {
+        // Don't trigger shortcuts when user is typing in input fields
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+            // Allow Escape to clear search when in search input
+            if (e.key === 'Escape' && e.target.id === 'global-search') {
+                this.clearSearch();
+                e.target.blur(); // Remove focus from search input
+            }
+            return;
+        }
+        
+        // Handle "/" key to focus search
+        if (e.key === '/') {
+            e.preventDefault(); // Prevent the "/" from being typed
+            const searchInput = document.getElementById('global-search');
+            searchInput.focus();
+            searchInput.select(); // Select any existing text
+        }
+        
+        // Handle Escape to clear search and remove focus
+        if (e.key === 'Escape') {
+            this.clearSearch();
+            document.activeElement.blur(); // Remove focus from any focused element
         }
     }
 
