@@ -11,7 +11,7 @@ class LinkShelfDashboard {
         this.categories = [];
         this.favourites = [];
         this.inbox = [];
-        this.columnCount = 3;
+        this.columnCount = 5;
         this.showFavourites = true;
         this.favouritesEditMode = false;
         this.openLinksInNewTab = true; // Default to opening in new tab
@@ -75,7 +75,7 @@ class LinkShelfDashboard {
                     name: 'My Bookmarks',
                     categories: result.linkshelf_categories || [],
                     favourites: result.linkshelf_favourites || [],
-                    columnCount: result.linkshelf_column_count || 3,
+                    columnCount: result.linkshelf_column_count || 5,
                     showFavourites: result.linkshelf_show_favourites !== false,
                     openLinksInNewTab: result.linkshelf_open_links_new_tab !== false,
                     createdAt: Date.now()
@@ -100,7 +100,7 @@ class LinkShelfDashboard {
                     name: 'My Bookmarks',
                     categories: [],
                     favourites: [],
-                    columnCount: 3,
+                    columnCount: 5,
                     showFavourites: true,
                     openLinksInNewTab: true,
                     createdAt: Date.now()
@@ -230,7 +230,7 @@ class LinkShelfDashboard {
         if (currentShelf) {
             this.categories = currentShelf.categories || [];
             this.favourites = currentShelf.favourites || [];
-            this.columnCount = currentShelf.columnCount || 3;
+            this.columnCount = currentShelf.columnCount || 5;
             this.showFavourites = currentShelf.showFavourites !== false;
             this.openLinksInNewTab = currentShelf.openLinksInNewTab !== false;
         }
@@ -519,67 +519,78 @@ class LinkShelfDashboard {
     }
     
     setupShelfSelectorEventListeners() {
+        // Remove any existing shelf selector event listeners to prevent duplicates
+        this.removeShelfSelectorEventListeners();
+        
         // Shelf selector button click
         const selectorBtn = document.getElementById('shelf-selector-btn');
         if (selectorBtn) {
-            selectorBtn.addEventListener('click', (e) => {
+            this.boundToggleShelfSelector = this.boundToggleShelfSelector || ((e) => {
                 e.stopPropagation();
                 this.toggleShelfSelectorDropdown();
             });
+            selectorBtn.addEventListener('click', this.boundToggleShelfSelector);
         }
         
-        // Shelf option clicks (switch shelf)
-        document.querySelectorAll('.shelf-option').forEach(option => {
-            option.addEventListener('click', (e) => {
-                // Check if click target is an action button or inside one
-                if (e.target.classList.contains('shelf-action-btn') || 
-                    e.target.closest('.shelf-action-btn') || 
-                    e.target.closest('.shelf-item-actions')) {
-                    return; // Don't switch if clicking action button
+        // Use event delegation for dropdown items to avoid adding/removing listeners repeatedly
+        const dropdownEl = document.getElementById('shelf-selector-dropdown');
+        if (dropdownEl) {
+            this.boundHandleDropdownClick = this.boundHandleDropdownClick || ((e) => {
+                const target = e.target;
+                const option = target.closest('.shelf-option');
+                const editBtn = target.closest('.edit-shelf-btn');
+                const deleteBtn = target.closest('.delete-shelf-btn');
+                const addBtn = target.closest('.add-shelf');
+                
+                if (editBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const shelfIndex = parseInt(editBtn.dataset.shelfIndex);
+                    this.openEditShelfModal(shelfIndex);
+                    this.closeShelfSelectorDropdown();
+                } else if (deleteBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const shelfIndex = parseInt(deleteBtn.dataset.shelfIndex);
+                    this.deleteShelf(shelfIndex);
+                    this.closeShelfSelectorDropdown();
+                } else if (addBtn) {
+                    e.stopPropagation();
+                    this.openCreateShelfModal();
+                    this.closeShelfSelectorDropdown();
+                } else if (option && !target.closest('.shelf-item-actions')) {
+                    // Switch shelf if clicking on the option but not on action buttons
+                    const shelfId = option.dataset.shelfId;
+                    this.switchToShelf(shelfId);
+                    this.closeShelfSelectorDropdown();
                 }
-                const shelfId = option.dataset.shelfId;
-                this.switchToShelf(shelfId);
-                this.closeShelfSelectorDropdown();
             });
-        });
+            dropdownEl.addEventListener('click', this.boundHandleDropdownClick);
+        }
         
-        // Edit shelf buttons
-        document.querySelectorAll('.edit-shelf-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const shelfIndex = parseInt(btn.dataset.shelfIndex);
-                this.openEditShelfModal(shelfIndex);
-                this.closeShelfSelectorDropdown();
-            });
-        });
+        // Add global click handler only once
+        if (!this.boundGlobalShelfClickHandler) {
+            this.boundGlobalShelfClickHandler = (e) => {
+                if (!e.target.closest('.shelf-selector')) {
+                    this.closeShelfSelectorDropdown();
+                }
+            };
+            document.addEventListener('click', this.boundGlobalShelfClickHandler);
+        }
+    }
+    
+    removeShelfSelectorEventListeners() {
+        // Remove shelf selector button event listener
+        const selectorBtn = document.getElementById('shelf-selector-btn');
+        if (selectorBtn && this.boundToggleShelfSelector) {
+            selectorBtn.removeEventListener('click', this.boundToggleShelfSelector);
+        }
         
-        // Delete shelf buttons
-        document.querySelectorAll('.delete-shelf-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const shelfIndex = parseInt(btn.dataset.shelfIndex);
-                this.deleteShelf(shelfIndex);
-                this.closeShelfSelectorDropdown();
-            });
-        });
-        
-        // Add shelf button
-        document.querySelectorAll('.add-shelf').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.openCreateShelfModal();
-                this.closeShelfSelectorDropdown();
-            });
-        });
-        
-        // Global click handler to close dropdown
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.shelf-selector')) {
-                this.closeShelfSelectorDropdown();
-            }
-        });
+        // Remove dropdown event listener
+        const dropdownEl = document.getElementById('shelf-selector-dropdown');
+        if (dropdownEl && this.boundHandleDropdownClick) {
+            dropdownEl.removeEventListener('click', this.boundHandleDropdownClick);
+        }
     }
     
     toggleShelfSelectorDropdown() {
@@ -666,18 +677,24 @@ class LinkShelfDashboard {
                 name: name,
                 categories: [],
                 favourites: [],
-                columnCount: 3,
+                columnCount: 5,
                 showFavourites: true,
                 openLinksInNewTab: true,
                 createdAt: Date.now()
             };
             
             this.shelves.push(newShelf);
+            
+            // Switch to the newly created shelf automatically
+            this.saveCurrentShelfData(); // Save current shelf data before switching
+            this.currentShelfId = newShelf.id;
+            this.loadCurrentShelf();
+            
             await this.saveData();
             this.renderShelfSelector();
             this.renderDashboard();
             this.closeModal('shelf-modal');
-            this.showToast('Shelf created successfully', 'success');
+            this.showToast(`Shelf "${name}" created and switched to successfully`, 'success');
         } else if (this.shelfModalMode === 'edit') {
             if (this.editingShelfIndex !== null) {
                 this.shelves[this.editingShelfIndex].name = name;
@@ -814,8 +831,11 @@ class LinkShelfDashboard {
     }
 
     renderColumn(columnCategories, columnIndex) {
+        const isEmpty = columnCategories.length === 0;
+        const emptyClass = isEmpty ? ' empty-column' : '';
+        
         return `
-            <div class="grid-column" data-column-index="${columnIndex}">
+            <div class="grid-column${emptyClass}" data-column-index="${columnIndex}">
                 <div class="column-drop-zone" data-column-index="${columnIndex}" data-position="0">
                     Drop categories here
                 </div>
@@ -825,7 +845,6 @@ class LinkShelfDashboard {
                         Drop categories here
                      </div>`
                 ).join('')}
-                ${columnCategories.length === 0 ? '<div class="empty-column-message">Empty column - drag categories here</div>' : ''}
             </div>
         `;
     }
@@ -3702,7 +3721,7 @@ class LinkShelfDashboard {
             // Import the data
             this.categories = importedData.categories;
             this.favourites = importedData.favourites || [];
-            this.columnCount = importedData.columnCount || this.columnCount || 3;
+            this.columnCount = importedData.columnCount || this.columnCount || 5;
             this.showFavourites = importedData.showFavourites !== false;
             this.openLinksInNewTab = importedData.openLinksInNewTab !== false;
             
@@ -3766,7 +3785,7 @@ class LinkShelfDashboard {
         // Find all top-level DT > H3 combinations in the root DL
         const rootDl = doc.querySelector('DL');
         if (!rootDl) {
-            return { categories: [], favourites: [], columnCount: 3, showFavourites: false, openLinksInNewTab: true };
+            return { categories: [], favourites: [], columnCount: 5, showFavourites: false, openLinksInNewTab: true };
         }
         
         // Look for direct DT children of the root DL
@@ -3928,7 +3947,7 @@ class LinkShelfDashboard {
         return {
             categories: categories,
             favourites: [], // Papaly doesn't have favourites concept
-            columnCount: 3,
+            columnCount: 5,
             showFavourites: false,
             openLinksInNewTab: true
         };
@@ -3948,7 +3967,7 @@ class LinkShelfDashboard {
         const rootDl = doc.querySelector('DL');
         if (!rootDl) {
             console.log('ERROR: No root DL found');
-            return { categories: [], favourites: [], columnCount: 3, showFavourites: false, openLinksInNewTab: true };
+            return { categories: [], favourites: [], columnCount: 5, showFavourites: false, openLinksInNewTab: true };
         }
         
         console.log('Found root DL, processing bookmark folders...');
@@ -4043,7 +4062,7 @@ class LinkShelfDashboard {
         return {
             categories: categories,
             favourites: [],
-            columnCount: 3,
+            columnCount: 5,
             showFavourites: false,
             openLinksInNewTab: true
         };

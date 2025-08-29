@@ -1,6 +1,7 @@
 /* CSS Variables */
 :root {
     --header-height: 59px; /* Standard header height */
+    font-size: 16px; /* Set explicit base font size for consistent rem calculations */
 }
 
 /* Reset and Base Styles */
@@ -10,12 +11,17 @@
     box-sizing: border-box;
 }
 
+html {
+    font-size: 16px; /* Explicit base font size for consistent rem calculations across all access methods */
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background-color: #364554;
     color: #C0C9D1;
     overflow-x: auto;
     min-height: 100vh;
+    font-size: 1rem; /* Ensure body inherits the base size */
 }
 
 /* Loading States */
@@ -1349,18 +1355,28 @@ body.dragging-category .column-drop-zone:hover {
     font-weight: 500;
 }
 
-.empty-column-message {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 120px;
-    color: #8B95A1;
-    font-size: 0.75rem;
-    text-align: center;
+/* Enhanced empty column drop zone for better UX */
+body.dragging-category .grid-column.empty-column .column-drop-zone {
+    height: 100%;
+    min-height: 200px;
+    opacity: 0.4;
     border: 2px dashed #4A5F73;
-    border-radius: 8px;
     background-color: rgba(52, 199, 128, 0.05);
-    margin: auto 0;
+    margin: 0;
+    border-radius: 8px;
+}
+
+body.dragging-category .grid-column.empty-column .column-drop-zone:hover {
+    opacity: 0.7;
+    border-color: #5A6F83;
+    background-color: rgba(52, 199, 128, 0.1);
+}
+
+body.dragging-category .grid-column.empty-column .column-drop-zone.drag-over {
+    opacity: 1;
+    border-color: #34C780;
+    background-color: rgba(52, 199, 128, 0.2);
+    color: #34C780;
 }
 
 /* Category Columns - cards within board columns */
@@ -2028,12 +2044,13 @@ body.dragging-category .column-drop-zone:hover {
 /* Toast Notifications */
 .toast-container {
     position: fixed;
-    bottom: 16px;
+    top: 80px; /* Position below header (59px) + some padding */
     right: 16px;
     z-index: 3000;
     display: flex;
     flex-direction: column;
     gap: 6px;
+    max-width: 320px;
 }
 
 .toast {
@@ -2042,6 +2059,8 @@ body.dragging-category .column-drop-zone:hover {
     border-radius: 5px;
     padding: 10px 13px;
     min-width: 240px;
+    max-width: 320px;
+    word-wrap: break-word;
     box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
     transform: translateX(100%);
     transition: transform 0.3s ease;

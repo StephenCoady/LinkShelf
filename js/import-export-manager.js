@@ -135,6 +135,9 @@ class ImportExportManager {
 
     // Import Papaly format file
     async importPapalyFile(file) {
+        // Show importing notification
+        this.dashboard.showToast(`Importing bookmarks from ${file.name}...`, 'info');
+        
         try {
             const text = await file.text();
             console.log('Force-importing as Papaly format...');
@@ -145,6 +148,9 @@ class ImportExportManager {
             await this.createShelfFromImport(importedData, `Imported from ${file.name.replace(/\.[^/.]+$/, "")}`);
             
             this.dashboard.showToast(`Successfully imported ${importedData.categories.length} categories from Papaly`, 'success');
+            
+            // Render the shelf selector to show new shelf
+            this.dashboard.renderShelfSelector();
             
             // Fetch favicons for imported links
             setTimeout(() => this.fetchFaviconsForImportedData(), 1000);
@@ -158,6 +164,9 @@ class ImportExportManager {
     async importBookmarks(e) {
         const file = e.target.files[0];
         if (!file) return;
+
+        // Show importing notification
+        this.dashboard.showToast(`Importing bookmarks from ${file.name}...`, 'info');
 
         try {
             const text = await file.text();
@@ -181,7 +190,7 @@ class ImportExportManager {
                 importedData = {
                     categories: data.categories,
                     favourites: data.favourites || [],
-                    columnCount: data.columnCount || 3,
+                    columnCount: data.columnCount || 5,
                     showFavourites: data.showFavourites !== false,
                     openLinksInNewTab: data.openLinksInNewTab !== false
                 };
@@ -191,6 +200,9 @@ class ImportExportManager {
             await this.createShelfFromImport(importedData, shelfName);
             
             this.dashboard.showToast(`Successfully imported ${importedData.categories.length} categories as "${shelfName}"`, 'success');
+            
+            // Render the shelf selector to show new shelf
+            this.dashboard.renderShelfSelector();
             
             // Fetch favicons for imported links
             setTimeout(() => this.fetchFaviconsForImportedData(), 1000);
@@ -262,7 +274,7 @@ class ImportExportManager {
         
         const rootDl = doc.querySelector('DL');
         if (!rootDl) {
-            return { categories: [], favourites: [], columnCount: 3, showFavourites: false, openLinksInNewTab: true };
+            return { categories: [], favourites: [], columnCount: 5, showFavourites: false, openLinksInNewTab: true };
         }
         
         const rootDtElements = Array.from(rootDl.children).filter(child => child.tagName === 'DT');
@@ -376,7 +388,7 @@ class ImportExportManager {
         return {
             categories: categories,
             favourites: [],
-            columnCount: 3,
+            columnCount: 5,
             showFavourites: false,
             openLinksInNewTab: true
         };
@@ -392,7 +404,7 @@ class ImportExportManager {
         
         const rootDl = doc.querySelector('DL');
         if (!rootDl) {
-            return { categories: [], favourites: [], columnCount: 3, showFavourites: false, openLinksInNewTab: true };
+            return { categories: [], favourites: [], columnCount: 5, showFavourites: false, openLinksInNewTab: true };
         }
         
         const processFolder = (dlElement, folderName = null, isTopLevel = true) => {
@@ -477,7 +489,7 @@ class ImportExportManager {
         return {
             categories: categories,
             favourites: [],
-            columnCount: 3,
+            columnCount: 5,
             showFavourites: false,
             openLinksInNewTab: true
         };
@@ -590,6 +602,11 @@ class ImportExportManager {
         } else {
             this.dashboard.showToast(`Successfully fetched ${fetchedCount} favicons! 🎉`, 'success');
         }
+        
+        // Force a page refresh after favicon fetching is complete to ensure everything displays properly
+        setTimeout(() => {
+            location.reload();
+        }, 2000); // Give time for the final success message to be seen
     }
 
     // HTML escape helper

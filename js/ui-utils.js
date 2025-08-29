@@ -90,10 +90,19 @@ class UIUtils {
     // Toast notification system
     static showToast(message, type = 'info') {
         const toast = document.createElement('div');
-        toast.className = `toast toast-${type}`;
+        toast.className = `toast ${type}`; // Fixed class names to match CSS
         toast.textContent = message;
         
-        document.body.appendChild(toast);
+        // Get the toast container, create if it doesn't exist
+        let toastContainer = document.getElementById('toast-container');
+        if (!toastContainer) {
+            toastContainer = document.createElement('div');
+            toastContainer.id = 'toast-container';
+            toastContainer.className = 'toast-container';
+            document.body.appendChild(toastContainer);
+        }
+        
+        toastContainer.appendChild(toast);
         
         // Trigger animation
         setTimeout(() => toast.classList.add('show'), 100);
@@ -102,8 +111,8 @@ class UIUtils {
         setTimeout(() => {
             toast.classList.remove('show');
             setTimeout(() => {
-                if (document.body.contains(toast)) {
-                    document.body.removeChild(toast);
+                if (toastContainer.contains(toast)) {
+                    toastContainer.removeChild(toast);
                 }
             }, 300);
         }, 3000);
