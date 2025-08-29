@@ -19,8 +19,12 @@ class DragDropManager {
     // Category drag and drop
     setupCategoryDragDrop() {
         document.querySelectorAll('.category-column').forEach(column => {
-            column.addEventListener('dragstart', (e) => this.handleCategoryDragStart(e));
-            column.addEventListener('dragend', (e) => this.handleCategoryDragEnd(e));
+            // Avoid duplicate listeners by checking if already set up
+            if (!column.hasAttribute('data-drag-listeners-setup')) {
+                column.setAttribute('data-drag-listeners-setup', 'true');
+                column.addEventListener('dragstart', (e) => this.handleCategoryDragStart(e));
+                column.addEventListener('dragend', (e) => this.handleCategoryDragEnd(e));
+            }
         });
     }
 
@@ -48,11 +52,15 @@ class DragDropManager {
     // Subcategory drag and drop
     setupSubcategoryDragDrop() {
         document.querySelectorAll('.subcategory').forEach(subcategory => {
-            subcategory.addEventListener('dragstart', (e) => this.handleSubcategoryDragStart(e));
-            subcategory.addEventListener('dragend', (e) => this.handleSubcategoryDragEnd(e));
-            subcategory.addEventListener('dragover', (e) => this.handleSubcategoryDragOver(e));
-            subcategory.addEventListener('dragleave', (e) => this.handleSubcategoryDragLeave(e));
-            subcategory.addEventListener('drop', (e) => this.handleSubcategoryDrop(e));
+            // Avoid duplicate listeners by checking if already set up
+            if (!subcategory.hasAttribute('data-drag-listeners-setup')) {
+                subcategory.setAttribute('data-drag-listeners-setup', 'true');
+                subcategory.addEventListener('dragstart', (e) => this.handleSubcategoryDragStart(e));
+                subcategory.addEventListener('dragend', (e) => this.handleSubcategoryDragEnd(e));
+                subcategory.addEventListener('dragover', (e) => this.handleSubcategoryDragOver(e));
+                subcategory.addEventListener('dragleave', (e) => this.handleSubcategoryDragLeave(e));
+                subcategory.addEventListener('drop', (e) => this.handleSubcategoryDrop(e));
+            }
         });
     }
 
@@ -133,11 +141,15 @@ class DragDropManager {
     // Link/Bookmark drag and drop
     setupLinkDragDrop() {
         document.querySelectorAll('.link-item, .bookmark-item').forEach(item => {
-            item.addEventListener('dragstart', (e) => this.handleLinkDragStart(e));
-            item.addEventListener('dragend', (e) => this.handleLinkDragEnd(e));
-            item.addEventListener('dragover', (e) => this.handleLinkDragOver(e));
-            item.addEventListener('dragleave', (e) => this.handleLinkDragLeave(e));
-            item.addEventListener('drop', (e) => this.handleLinkDrop(e));
+            // Avoid duplicate listeners by checking if already set up
+            if (!item.hasAttribute('data-drag-listeners-setup')) {
+                item.setAttribute('data-drag-listeners-setup', 'true');
+                item.addEventListener('dragstart', (e) => this.handleLinkDragStart(e));
+                item.addEventListener('dragend', (e) => this.handleLinkDragEnd(e));
+                item.addEventListener('dragover', (e) => this.handleLinkDragOver(e));
+                item.addEventListener('dragleave', (e) => this.handleLinkDragLeave(e));
+                item.addEventListener('drop', (e) => this.handleLinkDrop(e));
+            }
         });
 
         // Setup drop zones on link lists
@@ -429,20 +441,26 @@ class DragDropManager {
     // Inbox drag and drop
     setupInboxDragDrop() {
         const inboxContent = document.getElementById('inbox-content');
-        if (!inboxContent || inboxContent.hasAttribute('data-inbox-listeners-setup')) {
+        if (!inboxContent) {
             return;
         }
 
-        inboxContent.setAttribute('data-inbox-listeners-setup', 'true');
+        // Setup inbox content drop zone (only once)
+        if (!inboxContent.hasAttribute('data-inbox-listeners-setup')) {
+            inboxContent.setAttribute('data-inbox-listeners-setup', 'true');
+            inboxContent.addEventListener('dragover', (e) => this.handleInboxDragOver(e));
+            inboxContent.addEventListener('dragleave', (e) => this.handleInboxDragLeave(e));
+            inboxContent.addEventListener('drop', (e) => this.handleInboxDrop(e));
+        }
 
-        inboxContent.addEventListener('dragover', (e) => this.handleInboxDragOver(e));
-        inboxContent.addEventListener('dragleave', (e) => this.handleInboxDragLeave(e));
-        inboxContent.addEventListener('drop', (e) => this.handleInboxDrop(e));
-
-        // Setup inbox item drag
+        // Always setup inbox item drag listeners (for newly created items)
         document.querySelectorAll('.inbox-item').forEach(item => {
-            item.addEventListener('dragstart', (e) => this.handleInboxItemDragStart(e));
-            item.addEventListener('dragend', (e) => this.handleInboxItemDragEnd(e));
+            // Avoid duplicate listeners by checking if already set up
+            if (!item.hasAttribute('data-drag-listeners-setup')) {
+                item.setAttribute('data-drag-listeners-setup', 'true');
+                item.addEventListener('dragstart', (e) => this.handleInboxItemDragStart(e));
+                item.addEventListener('dragend', (e) => this.handleInboxItemDragEnd(e));
+            }
         });
     }
 

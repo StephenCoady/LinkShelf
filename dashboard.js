@@ -1825,6 +1825,7 @@ class LinkShelfDashboard {
         ).join('');
         
         this.setupInboxEventListeners();
+        this.dragDropManager.setupInboxDragDrop();
     }
 
     renderInboxItem(item, index) {
@@ -1910,11 +1911,7 @@ class LinkShelfDashboard {
             });
         });
 
-        // Drag and drop
-        document.querySelectorAll('.inbox-item').forEach(item => {
-            item.addEventListener('dragstart', (e) => this.handleInboxDragStart(e));
-            item.addEventListener('dragend', (e) => this.handleInboxDragEnd(e));
-        });
+        // Drag and drop is handled by dragDropManager.setupInboxDragDrop()
 
         // Favicon error handling
         document.querySelectorAll('.inbox-favicon').forEach(img => {
