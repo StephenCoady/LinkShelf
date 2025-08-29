@@ -1,4 +1,6 @@
 // LinkShelf Dashboard - Main JavaScript
+console.log('*** JAVASCRIPT IS LOADING ***');
+
 class LinkShelfDashboard {
     constructor() {
         // Multi-shelf support
@@ -40,9 +42,12 @@ class LinkShelfDashboard {
 
     // Initialize the dashboard
     async init() {
+        console.log('Dashboard init() started');
         await this.loadData();
+        console.log('Data loaded, setting up listeners...');
         this.setupStorageListener();
         this.setupEventListeners();
+        console.log('About to call renderDashboard()');
         this.renderDashboard();
         this.initializeSidebar();
         
@@ -147,10 +152,14 @@ class LinkShelfDashboard {
                     needsSave = true;
                 }
                 
-                // Initialize empty subcategories array if it doesn't exist
-                if (!category.subcategories) {
-                    category.subcategories = [];
-                    needsSave = true;
+                // Ensure all links have a type property
+                if (category.links) {
+                    category.links.forEach(link => {
+                        if (!link.type) {
+                            link.type = 'link';
+                            needsSave = true;
+                        }
+                    });
                 }
                 
                 // Migration for links - add customFaviconUrl field if missing
@@ -163,31 +172,37 @@ class LinkShelfDashboard {
                     });
                 }
                 
-                // Migration for subcategories - ensure they have proper structure
-                if (category.subcategories) {
+                // Migration: Flatten subcategories into links array
+                if (category.subcategories && category.subcategories.length > 0) {
+                    const newLinks = [...category.links];
+                    
                     category.subcategories.forEach(subcategory => {
-                        // Ensure subcategory has required properties
-                        if (!subcategory.id) {
-                            subcategory.id = this.generateId();
-                            needsSave = true;
-                        }
-                        if (subcategory.collapsed === undefined) {
-                            subcategory.collapsed = false;
-                            needsSave = true;
-                        }
-                        if (!subcategory.links) {
-                            subcategory.links = [];
-                            needsSave = true;
-                        }
+                        // Add subcategory header
+                        const subcategoryHeader = {
+                            type: 'subcategory-header',
+                            name: subcategory.name,
+                            id: subcategory.id || this.generateId(),
+                            collapsed: subcategory.collapsed || false
+                        };
+                        newLinks.push(subcategoryHeader);
                         
-                        // Migration for subcategory links - add customFaviconUrl field if missing
-                        subcategory.links.forEach(link => {
-                            if (link.customFaviconUrl === undefined) {
-                                link.customFaviconUrl = null;
-                                needsSave = true;
-                            }
-                        });
+                        // Add subcategory links with subcategoryId reference
+                        if (subcategory.links) {
+                            subcategory.links.forEach(link => {
+                                // Ensure link has required properties
+                                if (link.customFaviconUrl === undefined) {
+                                    link.customFaviconUrl = null;
+                                }
+                                link.type = 'link';
+                                link.subcategoryId = subcategoryHeader.id;
+                                newLinks.push(link);
+                            });
+                        }
                     });
+                    
+                    category.links = newLinks;
+                    delete category.subcategories;
+                    needsSave = true;
                 }
         });
         
@@ -409,6 +424,7 @@ class LinkShelfDashboard {
 
     // UI Rendering
     renderDashboard() {
+        console.log('renderDashboard() called');
         // Render inbox sidebar
         this.renderInbox();
         
@@ -453,6 +469,12 @@ class LinkShelfDashboard {
 
         this.setupCategoryEventListeners();
         this.dragDropManager.setupDragAndDrop();
+        
+        // Debug: Check what subcategories exist in DOM
+        const subcategoriesInDOM = document.querySelectorAll('.subcategory');
+        console.log(`DOM contains ${subcategoriesInDOM.length} subcategories after render:`, 
+            Array.from(subcategoriesInDOM).map(s => s.querySelector('.subcategory-title')?.textContent || 'NO NAME'));
+        
         this.attachDynamicEventListeners();
     }
 
@@ -852,22 +874,50 @@ class LinkShelfDashboard {
     renderCategory(category, categoryIndex) {
         let bodyContent = '';
         
-        // Render top-level links first
         if (category.links && category.links.length > 0) {
-            bodyContent += `
-                <ul class="links-list" data-category-index="${categoryIndex}">
-                    ${category.links.map((link, linkIndex) => 
-                        this.renderLink(link, categoryIndex, linkIndex, 'category')
-                    ).join('')}
-                </ul>
-            `;
-        }
-        
-        // Render subcategories
-        if (category.subcategories && category.subcategories.length > 0) {
-            bodyContent += category.subcategories.map((subcategory, subcategoryIndex) => 
-                this.renderSubcategory(subcategory, categoryIndex, subcategoryIndex)
-            ).join('');
+            // Group items by subcategory for rendering
+            const topLevelLinks = [];
+            const subcategoryGroups = new Map();
+            let currentSubcategoryId = null;
+            
+            category.links.forEach((item, index) => {
+                if (item.type === 'subcategory-header') {
+                    currentSubcategoryId = item.id;
+                    subcategoryGroups.set(item.id, {
+                        header: item,
+                        links: [],
+                        headerIndex: index
+                    });
+                } else if (item.type === 'link') {
+                    if (item.subcategoryId && subcategoryGroups.has(item.subcategoryId)) {
+                        subcategoryGroups.get(item.subcategoryId).links.push({...item, originalIndex: index});
+                    } else {
+                        topLevelLinks.push({...item, originalIndex: index});
+                    }
+                }
+            });
+            
+            bodyContent += '<ul class="links-list" data-category-index="' + categoryIndex + '">';
+            
+            // Render items in order they appear in the links array
+            category.links.forEach((item, index) => {
+                if (item.type === 'subcategory-header') {
+                    const group = subcategoryGroups.get(item.id);
+                    bodyContent += this.renderSubcategoryHeader(group.header, categoryIndex, index);
+                    
+                    if (!item.collapsed && group.links.length > 0) {
+                        bodyContent += '<ul class="subcategory-links-list" data-category-index="' + categoryIndex + '" data-subcategory-id="' + item.id + '">';
+                        group.links.forEach(link => {
+                            bodyContent += this.renderLink(link, categoryIndex, link.originalIndex, 'subcategory');
+                        });
+                        bodyContent += '</ul>';
+                    }
+                } else if (item.type === 'link' && !item.subcategoryId) {
+                    bodyContent += this.renderLink(item, categoryIndex, index, 'category');
+                }
+            });
+            
+            bodyContent += '</ul>';
         }
         
         return `
@@ -931,53 +981,31 @@ class LinkShelfDashboard {
         `;
     }
 
-    renderSubcategory(subcategory, categoryIndex, subcategoryIndex) {
-        const isCollapsed = subcategory.collapsed || false;
+    renderSubcategoryHeader(subcategoryHeader, categoryIndex, linkIndex) {
+        const isCollapsed = subcategoryHeader.collapsed || false;
         const caretIcon = isCollapsed ? '<img src="icons/app_icons/down-white.png" alt="Expand" class="caret-icon caret-right">' : '<img src="icons/app_icons/down-white.png" alt="Collapse" class="caret-icon">';
         
-        let subcategoryContent = '';
-        if (!isCollapsed) {
-            // Always render the subcategory-links-list, even if empty (for drag/drop target)
-            const linkItems = (subcategory.links && subcategory.links.length > 0) ?
-                subcategory.links.map((link, linkIndex) => 
-                    this.renderLink(link, categoryIndex, linkIndex, 'subcategory', subcategoryIndex)
-                ).join('') : '';
-                
-            // CRITICAL: No whitespace between tags for truly empty lists
-            if (linkItems) {
-                subcategoryContent = `<ul class="subcategory-links-list" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}">
-                    ${linkItems}
-                </ul>`;
-            } else {
-                // Truly empty - no whitespace at all
-                subcategoryContent = `<ul class="subcategory-links-list" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}"></ul>`;
-            }
-        }
-        
         return `
-            <div class="subcategory" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}" draggable="true">
+            <li class="subcategory-header-item link-item" data-category-index="${categoryIndex}" data-link-index="${linkIndex}" data-subcategory-id="${subcategoryHeader.id}" draggable="true">
                 <div class="subcategory-header">
-                    <button class="subcategory-toggle-btn" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}" title="Toggle Subcategory">
+                    <button class="subcategory-toggle-btn" data-category-index="${categoryIndex}" data-link-index="${linkIndex}" data-subcategory-id="${subcategoryHeader.id}" title="Toggle Subcategory">
                         <span class="subcategory-caret">${caretIcon}</span>
                     </button>
-                    <h4 class="subcategory-title">${this.escapeHtml(subcategory.name)}</h4>
-                    <button class="add-subcategory-link-btn" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}" title="Add Link to Subcategory">
+                    <h4 class="subcategory-title">${this.escapeHtml(subcategoryHeader.name)}</h4>
+                    <button class="add-subcategory-link-btn" data-category-index="${categoryIndex}" data-subcategory-id="${subcategoryHeader.id}" title="Add Link to Subcategory">
                         +
                     </button>
                     <div class="subcategory-actions">
-                        <button class="subcategory-menu-btn" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}" title="Subcategory Actions">
+                        <button class="subcategory-menu-btn" data-category-index="${categoryIndex}" data-link-index="${linkIndex}" data-subcategory-id="${subcategoryHeader.id}" title="Subcategory Actions">
                             ⋯
                         </button>
-                        <div class="subcategory-dropdown-menu" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}">
-                            <button class="dropdown-item subcategory-edit-btn" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}">Edit Subcategory</button>
-                            <button class="dropdown-item subcategory-delete-btn" data-category-index="${categoryIndex}" data-subcategory-index="${subcategoryIndex}">Delete Subcategory</button>
+                        <div class="subcategory-dropdown-menu" data-category-index="${categoryIndex}" data-link-index="${linkIndex}" data-subcategory-id="${subcategoryHeader.id}">
+                            <button class="dropdown-item subcategory-edit-btn" data-category-index="${categoryIndex}" data-link-index="${linkIndex}" data-subcategory-id="${subcategoryHeader.id}">Edit Subcategory</button>
+                            <button class="dropdown-item subcategory-delete-btn" data-category-index="${categoryIndex}" data-link-index="${linkIndex}" data-subcategory-id="${subcategoryHeader.id}">Delete Subcategory</button>
                         </div>
                     </div>
                 </div>
-                <div class="subcategory-body ${isCollapsed ? 'collapsed' : ''}">
-                    ${subcategoryContent}
-                </div>
-            </div>
+            </li>
         `;
     }
 
@@ -1150,14 +1178,22 @@ class LinkShelfDashboard {
         document.getElementById('category-name').focus();
     }
 
-    openEditSubcategoryModal(categoryIndex, subcategoryIndex) {
+    openEditSubcategoryModal(categoryIndex, subcategoryId) {
         this.currentEditingCategory = categoryIndex;
-        this.currentEditingSubcategory = subcategoryIndex;
+        this.currentEditingSubcategory = subcategoryId;
         
-        const subcategory = this.categories[categoryIndex].subcategories[subcategoryIndex];
+        // Find the subcategory header
+        const subcategoryHeader = this.categories[categoryIndex].links.find(item => 
+            item.type === 'subcategory-header' && item.id === subcategoryId
+        );
+        
+        if (!subcategoryHeader) {
+            console.error('Subcategory header not found');
+            return;
+        }
         
         document.getElementById('create-category-modal-title').textContent = 'Edit Subcategory';
-        document.getElementById('category-name').value = subcategory.name;
+        document.getElementById('category-name').value = subcategoryHeader.name;
         document.getElementById('save-category').textContent = 'Update Subcategory';
         
         this.categoryModalMode = 'edit-subcategory';
@@ -1167,34 +1203,63 @@ class LinkShelfDashboard {
     }
 
     async createSubcategory(categoryIndex, name) {
-        const newSubcategory = {
+        const newSubcategoryHeader = {
+            type: 'subcategory-header',
             id: this.generateId(),
             name: name,
-            links: [],
             collapsed: false
         };
 
-        this.categories[categoryIndex].subcategories.unshift(newSubcategory);
+        // Add at the beginning of the links array
+        this.categories[categoryIndex].links.unshift(newSubcategoryHeader);
         await this.saveData();
         this.renderDashboard();
         this.showToast('Subcategory created successfully', 'success');
         
-        // Flash the new subcategory (it will be at index 0 since we used unshift)
-        this.flashNewItem(`[data-category-index="${categoryIndex}"] [data-subcategory-index="0"]`);
+        // Flash the new subcategory header
+        this.flashNewItem(`[data-category-index="${categoryIndex}"] [data-subcategory-id="${newSubcategoryHeader.id}"]`);
     }
 
-    async editSubcategory(categoryIndex, subcategoryIndex, newName) {
-        this.categories[categoryIndex].subcategories[subcategoryIndex].name = newName;
+    async editSubcategory(categoryIndex, subcategoryHeaderId, newName) {
+        const categoryLinks = this.categories[categoryIndex].links;
+        
+        // Find the subcategory header
+        const headerIndex = categoryLinks.findIndex(item => 
+            item.type === 'subcategory-header' && item.id === subcategoryHeaderId
+        );
+        
+        if (headerIndex === -1) {
+            console.error('Subcategory header not found');
+            return;
+        }
+        
+        categoryLinks[headerIndex].name = newName;
         await this.saveData();
         this.renderDashboard();
         this.showToast('Subcategory updated successfully', 'success');
     }
 
-    deleteSubcategory(categoryIndex, subcategoryIndex) {
-        const subcategory = this.categories[categoryIndex].subcategories[subcategoryIndex];
-        const linkCount = subcategory.links.length;
+    deleteSubcategory(categoryIndex, subcategoryHeaderId) {
+        const categoryLinks = this.categories[categoryIndex].links;
         
-        let message = `Are you sure you want to delete the subcategory "${subcategory.name}"?`;
+        // Find the subcategory header
+        const headerIndex = categoryLinks.findIndex(item => 
+            item.type === 'subcategory-header' && item.id === subcategoryHeaderId
+        );
+        
+        if (headerIndex === -1) {
+            console.error('Subcategory header not found');
+            return;
+        }
+        
+        const subcategoryHeader = categoryLinks[headerIndex];
+        
+        // Count links belonging to this subcategory
+        const linkCount = categoryLinks.filter(item => 
+            item.type === 'link' && item.subcategoryId === subcategoryHeaderId
+        ).length;
+        
+        let message = `Are you sure you want to delete the subcategory "${subcategoryHeader.name}"?`;
         if (linkCount > 0) {
             message += `\n\nThis will also delete ${linkCount} link${linkCount > 1 ? 's' : ''}.`;
         }
@@ -1203,7 +1268,21 @@ class LinkShelfDashboard {
             'Delete Subcategory',
             message,
             () => {
-                this.categories[categoryIndex].subcategories.splice(subcategoryIndex, 1);
+                // Remove subcategory header and all its links
+                const itemsToRemove = [];
+                categoryLinks.forEach((item, index) => {
+                    if (item.type === 'subcategory-header' && item.id === subcategoryHeaderId) {
+                        itemsToRemove.push(index);
+                    } else if (item.type === 'link' && item.subcategoryId === subcategoryHeaderId) {
+                        itemsToRemove.push(index);
+                    }
+                });
+                
+                // Remove items in reverse order to maintain indices
+                itemsToRemove.reverse().forEach(index => {
+                    categoryLinks.splice(index, 1);
+                });
+                
                 this.saveData();
                 this.renderDashboard();
                 this.showToast('Subcategory deleted successfully', 'success');
@@ -1211,29 +1290,27 @@ class LinkShelfDashboard {
         );
     }
 
-    async toggleSubcategoryCollapsed(categoryIndex, subcategoryIndex) {
+    async toggleSubcategoryCollapsed(categoryIndex, subcategoryHeaderId) {
         // Validate categoryIndex
         if (categoryIndex < 0 || categoryIndex >= this.categories.length) {
             console.error('Invalid categoryIndex:', categoryIndex);
             return;
         }
         
-        const category = this.categories[categoryIndex];
+        const categoryLinks = this.categories[categoryIndex].links;
         
-        // Validate category has subcategories
-        if (!category.subcategories || !Array.isArray(category.subcategories)) {
-            console.error('Category does not have subcategories array:', category);
+        // Find the subcategory header
+        const headerIndex = categoryLinks.findIndex(item => 
+            item.type === 'subcategory-header' && item.id === subcategoryHeaderId
+        );
+        
+        if (headerIndex === -1) {
+            console.error('Subcategory header not found');
             return;
         }
         
-        // Validate subcategoryIndex
-        if (subcategoryIndex < 0 || subcategoryIndex >= category.subcategories.length) {
-            console.error('Invalid subcategoryIndex:', subcategoryIndex, 'for category with', category.subcategories.length, 'subcategories');
-            return;
-        }
-        
-        const subcategory = category.subcategories[subcategoryIndex];
-        subcategory.collapsed = !subcategory.collapsed;
+        const subcategoryHeader = categoryLinks[headerIndex];
+        subcategoryHeader.collapsed = !subcategoryHeader.collapsed;
         await this.saveData();
         this.renderDashboard();
     }
@@ -1397,8 +1474,8 @@ class LinkShelfDashboard {
                     this.inbox[this.currentEditingBookmark] = bookmarkData;
                     this.showToast('Inbox item updated successfully', 'success');
                 } else if (this.currentEditingSubcategory !== null) {
-                    // Update existing subcategory link
-                    this.categories[this.currentEditingCategory].subcategories[this.currentEditingSubcategory].links[this.currentEditingBookmark] = bookmarkData;
+                    // Update existing link in new structure
+                    this.categories[this.currentEditingCategory].links[this.currentEditingBookmark] = bookmarkData;
                     this.showToast('Link updated successfully', 'success');
                 } else {
                     // Update existing category link (backward compatibility)
@@ -1408,8 +1485,9 @@ class LinkShelfDashboard {
                 }
             } else {
                 if (this.currentEditingSubcategory !== null) {
-                    // Add new subcategory link to top
-                    this.categories[this.currentEditingCategory].subcategories[this.currentEditingSubcategory].links.unshift(bookmarkData);
+                    // Add new link with subcategory ID
+                    bookmarkData.subcategoryId = this.currentEditingSubcategory;
+                    this.categories[this.currentEditingCategory].links.unshift(bookmarkData);
                     this.showToast('Link added to subcategory successfully', 'success');
                 } else {
                     // Add new category link to top (backward compatibility)
@@ -1561,15 +1639,9 @@ class LinkShelfDashboard {
             const linkIndex = this.currentEditingBookmark;
             const subcategoryIndex = this.currentEditingSubcategory;
             
-            let link, linksArray;
-            if (subcategoryIndex !== null) {
-                linksArray = this.categories[categoryIndex].subcategories[subcategoryIndex].links;
-                link = linksArray[linkIndex];
-            } else {
-                // Handle backward compatibility - categories use 'bookmarks' not 'links'
-                linksArray = this.categories[categoryIndex].links || this.categories[categoryIndex].bookmarks;
-                link = linksArray[linkIndex];
-            }
+            // All links are now in the main links array
+            const linksArray = this.categories[categoryIndex].links;
+            const link = linksArray[linkIndex];
             
             const isSubcategory = subcategoryIndex !== null;
             const confirmTitle = isSubcategory ? 'Delete Subcategory Link' : 'Delete Category Link';
@@ -1625,57 +1697,72 @@ class LinkShelfDashboard {
 
     async moveLinkToPosition(sourceCategoryIndex, sourceLinkIndex, sourceSubcategoryIndex, targetCategoryIndex, targetPosition, targetSubcategoryIndex) {
         // Get the link being moved from source location
-        let link, sourceLinksArray;
-        if (sourceSubcategoryIndex !== null) {
-            sourceLinksArray = this.categories[sourceCategoryIndex].subcategories[sourceSubcategoryIndex].links;
-            link = sourceLinksArray[sourceLinkIndex];
-        } else {
-            // Handle backward compatibility - categories use 'bookmarks' not 'links'
-            sourceLinksArray = this.categories[sourceCategoryIndex].links || this.categories[sourceCategoryIndex].bookmarks;
-            link = sourceLinksArray[sourceLinkIndex];
-        }
+        const sourceLinksArray = this.categories[sourceCategoryIndex].links;
+        const link = sourceLinksArray[sourceLinkIndex];
         
-        if (!link) {
-            console.error('Link not found at source position');
+        if (!link || (link.type !== 'link' && link.type !== 'subcategory-header')) {
+            console.error('Item not found at source position or not a valid moveable type');
             return;
         }
         
-        // Remove link from source location
+        // Remove item from source location
         sourceLinksArray.splice(sourceLinkIndex, 1);
         
-        // Get target links array
-        let targetLinksArray;
-        if (targetSubcategoryIndex !== null) {
-            targetLinksArray = this.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].links;
-        } else {
-            // Handle backward compatibility - categories use 'bookmarks' not 'links'
-            targetLinksArray = this.categories[targetCategoryIndex].links || this.categories[targetCategoryIndex].bookmarks;
+        // If moving a subcategory header, also move all its associated links
+        const itemsToMove = [link];
+        if (link.type === 'subcategory-header') {
+            // Find and collect all links belonging to this subcategory
+            const subcategoryLinks = [];
+            for (let i = sourceLinksArray.length - 1; i >= 0; i--) {
+                const item = sourceLinksArray[i];
+                if (item.type === 'link' && item.subcategoryId === link.id) {
+                    subcategoryLinks.unshift(sourceLinksArray.splice(i, 1)[0]);
+                }
+            }
+            itemsToMove.push(...subcategoryLinks);
         }
+        
+        // Update subcategoryId if moving to/from subcategory (only for links, not subcategory headers)
+        if (link.type === 'link') {
+            if (targetSubcategoryIndex !== null) {
+                // Find the subcategory header by counting subcategory headers
+                let subcategoryHeaderCount = 0;
+                for (const item of this.categories[targetCategoryIndex].links) {
+                    if (item.type === 'subcategory-header') {
+                        if (subcategoryHeaderCount === targetSubcategoryIndex) {
+                            link.subcategoryId = item.id;
+                            break;
+                        }
+                        subcategoryHeaderCount++;
+                    }
+                }
+            } else {
+                delete link.subcategoryId;
+            }
+        }
+        
+        // Get target links array
+        const targetLinksArray = this.categories[targetCategoryIndex].links;
         
         // Handle position adjustment for same list moves
         let insertPosition = targetPosition;
         if (targetPosition === -1) {
             insertPosition = targetLinksArray.length; // Append to end
-        } else if (sourceCategoryIndex === targetCategoryIndex && 
-                   sourceSubcategoryIndex === targetSubcategoryIndex && 
-                   sourceLinkIndex < targetPosition) {
+        } else if (sourceCategoryIndex === targetCategoryIndex && sourceLinkIndex < targetPosition) {
             insertPosition = targetPosition - 1; // Adjust for same list
         }
         
-        // Insert link at target position
-        targetLinksArray.splice(insertPosition, 0, link);
+        // Insert all items at target position
+        targetLinksArray.splice(insertPosition, 0, ...itemsToMove);
         
         await this.saveData();
         this.renderDashboard();
         
         // Show appropriate toast message
-        if (sourceCategoryIndex === targetCategoryIndex && sourceSubcategoryIndex === targetSubcategoryIndex) {
+        if (sourceCategoryIndex === targetCategoryIndex) {
             this.showToast('Link reordered successfully', 'success');
         } else {
-            const targetName = targetSubcategoryIndex !== null ? 
-                `subcategory "${this.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].name}"` :
-                `category "${this.categories[targetCategoryIndex].name}"`;
-            this.showToast(`Link moved to ${targetName}`, 'success');
+            this.showToast(`Link moved to category "${this.categories[targetCategoryIndex].name}"`, 'success');
         }
     }
 
@@ -1692,17 +1779,27 @@ class LinkShelfDashboard {
             name: inboxItem.name,
             url: inboxItem.url,
             faviconData: inboxItem.faviconData,
-            customFaviconUrl: inboxItem.customFaviconUrl
+            customFaviconUrl: inboxItem.customFaviconUrl,
+            type: 'link'
         };
 
-        // Get target links array
-        let targetLinksArray;
+        // Update subcategoryId if moving to subcategory
         if (targetSubcategoryIndex !== null) {
-            targetLinksArray = this.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].links;
-        } else {
-            // Handle backward compatibility - categories use 'bookmarks' not 'links'
-            targetLinksArray = this.categories[targetCategoryIndex].links || this.categories[targetCategoryIndex].bookmarks;
+            // Find the subcategory header by counting subcategory headers
+            let subcategoryHeaderCount = 0;
+            for (const item of this.categories[targetCategoryIndex].links) {
+                if (item.type === 'subcategory-header') {
+                    if (subcategoryHeaderCount === targetSubcategoryIndex) {
+                        linkData.subcategoryId = item.id;
+                        break;
+                    }
+                    subcategoryHeaderCount++;
+                }
+            }
         }
+
+        // Get target links array
+        const targetLinksArray = this.categories[targetCategoryIndex].links;
 
         // Handle position
         const insertPosition = targetPosition === -1 ? targetLinksArray.length : targetPosition;
@@ -1716,42 +1813,10 @@ class LinkShelfDashboard {
         await this.saveData();
         this.renderDashboard();
         
-        const targetName = targetSubcategoryIndex !== null ? 
-            `subcategory "${this.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].name}"` :
-            `category "${this.categories[targetCategoryIndex].name}"`;
+        const targetName = `category "${this.categories[targetCategoryIndex].name}"`;
         this.showToast(`Moved "${inboxItem.name}" to ${targetName}`, 'success');
     }
 
-    async moveSubcategoryToPosition(sourceCategoryIndex, sourceSubcategoryIndex, targetCategoryIndex, targetPosition) {
-        // Get the subcategory being moved
-        const subcategory = this.categories[sourceCategoryIndex].subcategories[sourceSubcategoryIndex];
-        if (!subcategory) {
-            console.error('Subcategory not found at source position');
-            return;
-        }
-
-        // Remove subcategory from source category
-        this.categories[sourceCategoryIndex].subcategories.splice(sourceSubcategoryIndex, 1);
-
-        // Adjust target position if moving within same category
-        let insertPosition = targetPosition;
-        if (sourceCategoryIndex === targetCategoryIndex && sourceSubcategoryIndex < targetPosition) {
-            insertPosition = targetPosition - 1;
-        }
-
-        // Insert subcategory at target position
-        this.categories[targetCategoryIndex].subcategories.splice(insertPosition, 0, subcategory);
-
-        await this.saveData();
-        this.renderDashboard();
-
-        // Show appropriate toast message
-        if (sourceCategoryIndex === targetCategoryIndex) {
-            this.showToast('Subcategory reordered successfully', 'success');
-        } else {
-            this.showToast(`Subcategory moved to "${this.categories[targetCategoryIndex].name}"`, 'success');
-        }
-    }
 
     // Sidebar State Management
     loadSidebarState() {
@@ -2124,9 +2189,16 @@ class LinkShelfDashboard {
     }
 
     // Quick categorize to subcategory
-    quickCategorizeToSubcategory(inboxIndex, categoryIndex, subcategoryIndex) {
+    quickCategorizeToSubcategory(inboxIndex, categoryIndex, subcategoryId) {
         const item = this.inbox[inboxIndex];
-        if (!item || !this.categories[categoryIndex]?.subcategories?.[subcategoryIndex]) {
+        const category = this.categories[categoryIndex];
+        
+        // Find the subcategory header
+        const subcategoryHeader = category.links.find(link => 
+            link.type === 'subcategory-header' && link.id === subcategoryId
+        );
+        
+        if (!item || !category || !subcategoryHeader) {
             console.error('Invalid inbox item, category, or subcategory');
             return;
         }
@@ -2137,14 +2209,13 @@ class LinkShelfDashboard {
             name: item.name,
             url: item.url,
             faviconData: item.faviconData,
-            customFaviconUrl: item.customFaviconUrl
+            customFaviconUrl: item.customFaviconUrl,
+            type: 'link',
+            subcategoryId: subcategoryId
         };
 
-        // Add to subcategory
-        if (!this.categories[categoryIndex].subcategories[subcategoryIndex].links) {
-            this.categories[categoryIndex].subcategories[subcategoryIndex].links = [];
-        }
-        this.categories[categoryIndex].subcategories[subcategoryIndex].links.push(link);
+        // Add to category links array
+        category.links.push(link);
 
         // Remove from inbox
         this.inbox.splice(inboxIndex, 1);
@@ -2152,7 +2223,7 @@ class LinkShelfDashboard {
         // Save and re-render
         this.saveData();
         this.renderDashboard();
-        this.showToast(`Added to "${this.categories[categoryIndex].name} → ${this.categories[categoryIndex].subcategories[subcategoryIndex].name}"`, 'success');
+        this.showToast(`Added to "${category.name} → ${subcategoryHeader.name}"`, 'success');
     }
 
     async moveInboxItemToCategory(inboxIndex, targetCategoryIndex) {
@@ -2647,50 +2718,29 @@ class LinkShelfDashboard {
                 this.highlightText(categoryElement.querySelector('.category-title'), category.name, this.searchQuery);
             }
             
-            // Check top-level links
+            // Check all items in the category (links and subcategory headers)
             if (category.links) {
-                category.links.forEach((link, linkIndex) => {
-                    const linkElement = categoryElement.querySelector(`[data-link-index="${linkIndex}"]`);
-                    if (linkElement && this.linkMatchesSearch(link)) {
-                        categoryHasMatch = true;
-                        linkElement.classList.add('search-match');
-                        this.highlightLinkText(linkElement, link, this.searchQuery);
-                    } else if (linkElement) {
-                        linkElement.classList.remove('search-match');
-                        this.removeHighlights(linkElement);
-                    }
-                });
-            }
-            
-            // Check subcategories and their links
-            if (category.subcategories) {
-                category.subcategories.forEach((subcategory, subcategoryIndex) => {
-                    let subcategoryHasMatch = false;
-                    
-                    // Check subcategory name
-                    if (subcategory.name.toLowerCase().includes(this.searchQuery)) {
-                        subcategoryHasMatch = true;
-                        categoryHasMatch = true;
-                        const subcategoryElement = categoryElement.querySelector(`[data-subcategory-index="${subcategoryIndex}"]`);
-                        if (subcategoryElement) {
-                            this.highlightText(subcategoryElement.querySelector('.subcategory-title'), subcategory.name, this.searchQuery);
-                        }
-                    }
-                    
-                    // Check subcategory links
-                    if (subcategory.links) {
-                        subcategory.links.forEach((link, linkIndex) => {
-                            const linkElement = categoryElement.querySelector(`[data-subcategory-index="${subcategoryIndex}"] [data-link-index="${linkIndex}"]`);
-                            if (linkElement && this.linkMatchesSearch(link)) {
-                                subcategoryHasMatch = true;
-                                categoryHasMatch = true;
-                                linkElement.classList.add('search-match');
-                                this.highlightLinkText(linkElement, link, this.searchQuery);
-                            } else if (linkElement) {
-                                linkElement.classList.remove('search-match');
-                                this.removeHighlights(linkElement);
+                category.links.forEach((item, itemIndex) => {
+                    if (item.type === 'subcategory-header') {
+                        // Check subcategory header name
+                        if (item.name.toLowerCase().includes(this.searchQuery)) {
+                            categoryHasMatch = true;
+                            const subcategoryElement = categoryElement.querySelector(`[data-subcategory-id="${item.id}"]`);
+                            if (subcategoryElement) {
+                                this.highlightText(subcategoryElement.querySelector('.subcategory-title'), item.name, this.searchQuery);
                             }
-                        });
+                        }
+                    } else if (item.type === 'link') {
+                        // Check link
+                        const linkElement = categoryElement.querySelector(`[data-link-index="${itemIndex}"]`);
+                        if (linkElement && this.linkMatchesSearch(item)) {
+                            categoryHasMatch = true;
+                            linkElement.classList.add('search-match');
+                            this.highlightLinkText(linkElement, item, this.searchQuery);
+                        } else if (linkElement) {
+                            linkElement.classList.remove('search-match');
+                            this.removeHighlights(linkElement);
+                        }
                     }
                 });
             }
@@ -2773,9 +2823,14 @@ class LinkShelfDashboard {
         const subcategoryTitle = element.querySelector('.subcategory-title');
         if (subcategoryTitle) {
             const categoryIndex = parseInt(element.dataset.categoryIndex);
-            const subcategoryIndex = parseInt(element.dataset.subcategoryIndex);
-            if (this.categories[categoryIndex]?.subcategories?.[subcategoryIndex]) {
-                subcategoryTitle.textContent = this.categories[categoryIndex].subcategories[subcategoryIndex].name;
+            const subcategoryId = element.dataset.subcategoryId;
+            if (this.categories[categoryIndex] && subcategoryId) {
+                const subcategoryHeader = this.categories[categoryIndex].links.find(item => 
+                    item.type === 'subcategory-header' && item.id === subcategoryId
+                );
+                if (subcategoryHeader) {
+                    subcategoryTitle.textContent = subcategoryHeader.name;
+                }
             }
         }
         
@@ -3102,19 +3157,16 @@ class LinkShelfDashboard {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 
-                // Use currentTarget (the button) instead of target (which might be the span inside)
                 const button = e.currentTarget;
-                
                 const categoryIndex = parseInt(button.dataset.categoryIndex);
-                const subcategoryIndex = parseInt(button.dataset.subcategoryIndex);
+                const subcategoryId = button.dataset.subcategoryId;
                 
-                // Check for NaN values
-                if (isNaN(categoryIndex) || isNaN(subcategoryIndex)) {
-                    console.error('Invalid indices - NaN detected:', { categoryIndex, subcategoryIndex });
+                if (isNaN(categoryIndex) || !subcategoryId) {
+                    console.error('Invalid data for subcategory toggle:', { categoryIndex, subcategoryId });
                     return;
                 }
                 
-                this.toggleSubcategoryCollapsed(categoryIndex, subcategoryIndex);
+                this.toggleSubcategoryCollapsed(categoryIndex, subcategoryId);
             });
         });
 
@@ -3123,8 +3175,8 @@ class LinkShelfDashboard {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const categoryIndex = parseInt(e.currentTarget.dataset.categoryIndex);
-                const subcategoryIndex = parseInt(e.currentTarget.dataset.subcategoryIndex);
-                this.toggleSubcategoryDropdown(categoryIndex, subcategoryIndex);
+                const subcategoryId = e.currentTarget.dataset.subcategoryId;
+                this.toggleSubcategoryDropdown(categoryIndex, subcategoryId);
             });
         });
 
@@ -3133,8 +3185,8 @@ class LinkShelfDashboard {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const categoryIndex = parseInt(e.currentTarget.dataset.categoryIndex);
-                const subcategoryIndex = parseInt(e.currentTarget.dataset.subcategoryIndex);
-                this.openEditSubcategoryModal(categoryIndex, subcategoryIndex);
+                const subcategoryId = e.currentTarget.dataset.subcategoryId;
+                this.openEditSubcategoryModal(categoryIndex, subcategoryId);
             });
         });
 
@@ -3142,8 +3194,8 @@ class LinkShelfDashboard {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const categoryIndex = parseInt(e.currentTarget.dataset.categoryIndex);
-                const subcategoryIndex = parseInt(e.currentTarget.dataset.subcategoryIndex);
-                this.deleteSubcategory(categoryIndex, subcategoryIndex);
+                const subcategoryId = e.currentTarget.dataset.subcategoryId;
+                this.deleteSubcategory(categoryIndex, subcategoryId);
             });
         });
 
@@ -3174,8 +3226,8 @@ class LinkShelfDashboard {
     }
 
     // Subcategory Dropdown Management
-    toggleSubcategoryDropdown(categoryIndex, subcategoryIndex) {
-        const dropdown = document.querySelector(`.subcategory-dropdown-menu[data-category-index="${categoryIndex}"][data-subcategory-index="${subcategoryIndex}"]`);
+    toggleSubcategoryDropdown(categoryIndex, subcategoryId) {
+        const dropdown = document.querySelector(`.subcategory-dropdown-menu[data-category-index="${categoryIndex}"][data-subcategory-id="${subcategoryId}"]`);
         if (!dropdown) return;
         
         const isCurrentlyOpen = dropdown.classList.contains('show');
@@ -3502,12 +3554,7 @@ class LinkShelfDashboard {
             const sourceSubcategoryIndex = this.draggedElement.dataset.subcategoryIndex ? parseInt(this.draggedElement.dataset.subcategoryIndex) : null;
             
             // Drop at the end of the target list
-            let targetPosition;
-            if (targetSubcategoryIndex !== null) {
-                targetPosition = this.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].links.length;
-            } else {
-                targetPosition = this.categories[targetCategoryIndex].links.length;
-            }
+            const targetPosition = this.categories[targetCategoryIndex].links.length;
             
             this.moveLinkToPosition(sourceCategoryIndex, sourceLinkIndex, sourceSubcategoryIndex, targetCategoryIndex, targetPosition, targetSubcategoryIndex);
         } else if (this.draggedType === 'inbox') {
@@ -3637,8 +3684,8 @@ class LinkShelfDashboard {
             const sourceLinkIndex = parseInt(this.draggedElement.dataset.linkIndex || this.draggedElement.dataset.bookmarkIndex);
             const sourceSubcategoryIndex = this.draggedElement.dataset.subcategoryIndex ? parseInt(this.draggedElement.dataset.subcategoryIndex) : null;
             
-            // Drop at the end of the target subcategory's links
-            const targetPosition = this.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].links.length;
+            // Drop at the end of the target category's links
+            const targetPosition = this.categories[targetCategoryIndex].links.length;
             
             this.moveLinkToPosition(sourceCategoryIndex, sourceLinkIndex, sourceSubcategoryIndex, targetCategoryIndex, targetPosition, targetSubcategoryIndex);
         } else if (this.draggedType === 'inbox') {
@@ -4197,6 +4244,7 @@ class LinkShelfDashboard {
 // Initialize dashboard when DOM is loaded
 let dashboard;
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM loaded, initializing dashboard...');
     dashboard = new LinkShelfDashboard();
     dashboard.init();
     

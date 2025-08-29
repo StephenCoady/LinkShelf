@@ -4,12 +4,12 @@ class DragDropManager {
         this.dashboard = dashboard;
         this.draggedElement = null;
         this.draggedType = null;
+        this.isDropping = false; // Prevent duplicate drops
     }
 
     // Setup drag and drop for various elements
     setupDragAndDrop() {
         this.setupCategoryDragDrop();
-        this.setupSubcategoryDragDrop();
         this.setupLinkDragDrop();
         this.setupInboxDragDrop();
         this.setupFavouriteDragDrop();
@@ -49,94 +49,6 @@ class DragDropManager {
         });
     }
 
-    // Subcategory drag and drop
-    setupSubcategoryDragDrop() {
-        document.querySelectorAll('.subcategory').forEach(subcategory => {
-            // Avoid duplicate listeners by checking if already set up
-            if (!subcategory.hasAttribute('data-drag-listeners-setup')) {
-                subcategory.setAttribute('data-drag-listeners-setup', 'true');
-                subcategory.addEventListener('dragstart', (e) => this.handleSubcategoryDragStart(e));
-                subcategory.addEventListener('dragend', (e) => this.handleSubcategoryDragEnd(e));
-                subcategory.addEventListener('dragover', (e) => this.handleSubcategoryDragOver(e));
-                subcategory.addEventListener('dragleave', (e) => this.handleSubcategoryDragLeave(e));
-                subcategory.addEventListener('drop', (e) => this.handleSubcategoryDrop(e));
-            }
-        });
-    }
-
-    handleSubcategoryDragStart(e) {
-        e.stopPropagation(); // Prevent category drag from triggering
-        const subcategory = e.target.closest('.subcategory');
-        this.draggedElement = subcategory;
-        this.draggedType = 'subcategory';
-        subcategory.classList.add('dragging');
-        document.body.classList.add('dragging-subcategory');
-    }
-
-    handleSubcategoryDragEnd(e) {
-        const subcategory = e.target.closest('.subcategory');
-        subcategory.classList.remove('dragging');
-        document.body.classList.remove('dragging-subcategory');
-        this.draggedElement = null;
-        this.draggedType = null;
-        
-        // Clean up drag-over classes
-        document.querySelectorAll('.subcategory.drag-over-top, .subcategory.drag-over-bottom').forEach(item => {
-            item.classList.remove('drag-over-top', 'drag-over-bottom');
-        });
-    }
-
-    handleSubcategoryDragOver(e) {
-        if (this.draggedType !== 'subcategory') return;
-        e.preventDefault();
-        e.stopPropagation();
-        e.dataTransfer.dropEffect = 'move';
-        
-        const targetSubcategory = e.target.closest('.subcategory');
-        if (targetSubcategory && targetSubcategory !== this.draggedElement) {
-            // Clear previous highlights
-            document.querySelectorAll('.subcategory.drag-over-top, .subcategory.drag-over-bottom').forEach(item => {
-                item.classList.remove('drag-over-top', 'drag-over-bottom');
-            });
-            
-            // Determine insert position based on mouse position
-            const rect = targetSubcategory.getBoundingClientRect();
-            const midY = rect.top + rect.height / 2;
-            const insertAfter = e.clientY > midY;
-            
-            if (insertAfter) {
-                targetSubcategory.classList.add('drag-over-bottom');
-            } else {
-                targetSubcategory.classList.add('drag-over-top');
-            }
-        }
-    }
-
-    handleSubcategoryDragLeave(e) {
-        // Handle drag leave for subcategories
-    }
-
-    handleSubcategoryDrop(e) {
-        if (this.draggedType !== 'subcategory' || !this.draggedElement) return;
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const targetSubcategory = e.target.closest('.subcategory');
-        if (!targetSubcategory || targetSubcategory === this.draggedElement) return;
-        
-        const draggedCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
-        const draggedSubcategoryIndex = parseInt(this.draggedElement.dataset.subcategoryIndex);
-        const targetCategoryIndex = parseInt(targetSubcategory.dataset.categoryIndex);
-        const targetSubcategoryIndex = parseInt(targetSubcategory.dataset.subcategoryIndex);
-        
-        // Determine insert position based on mouse position
-        const rect = targetSubcategory.getBoundingClientRect();
-        const midY = rect.top + rect.height / 2;
-        const insertAfter = e.clientY > midY;
-        const targetPosition = insertAfter ? targetSubcategoryIndex + 1 : targetSubcategoryIndex;
-        
-        this.dashboard.moveSubcategoryToPosition(draggedCategoryIndex, draggedSubcategoryIndex, targetCategoryIndex, targetPosition);
-    }
 
     // Link/Bookmark drag and drop
     setupLinkDragDrop() {
@@ -180,14 +92,33 @@ class DragDropManager {
         e.stopPropagation(); // Prevent category drag from triggering
         const linkItem = e.target.closest('.link-item, .bookmark-item');
         this.draggedElement = linkItem;
-        this.draggedType = linkItem.classList.contains('link-item') ? 'link' : 'bookmark';
+        
+        // Determine drag type based on element classes or data
+        if (linkItem.classList.contains('subcategory-header-item')) {
+            this.draggedType = 'subcategory-header';
+        } else if (linkItem.classList.contains('link-item')) {
+            this.draggedType = 'link';
+        } else {
+            this.draggedType = 'bookmark';
+        }
+        
         linkItem.classList.add('dragging');
         document.body.classList.add(`dragging-${this.draggedType}`);
     }
 
     handleLinkDragEnd(e) {
         const linkItem = e.target.closest('.link-item, .bookmark-item');
-        const dragType = linkItem.classList.contains('link-item') ? 'link' : 'bookmark';
+        
+        // Determine drag type for cleanup
+        let dragType;
+        if (linkItem.classList.contains('subcategory-header-item')) {
+            dragType = 'subcategory-header';
+        } else if (linkItem.classList.contains('link-item')) {
+            dragType = 'link';
+        } else {
+            dragType = 'bookmark';
+        }
+        
         linkItem.classList.remove('dragging');
         document.body.classList.remove(`dragging-${dragType}`);
         this.draggedElement = null;
@@ -198,7 +129,7 @@ class DragDropManager {
     }
 
     handleLinkDragOver(e) {
-        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark' && this.draggedType !== 'inbox') return;
+        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark' && this.draggedType !== 'inbox' && this.draggedType !== 'subcategory-header') return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
@@ -209,6 +140,15 @@ class DragDropManager {
             document.querySelectorAll('.link-item.drag-over-top, .link-item.drag-over-bottom, .bookmark-item.drag-over-top, .bookmark-item.drag-over-bottom').forEach(item => {
                 item.classList.remove('drag-over-top', 'drag-over-bottom');
             });
+            
+            // If dragging a subcategory header, only show visual feedback over other subcategory headers
+            if (this.draggedType === 'subcategory-header') {
+                const isTargetSubcategoryHeader = targetLink.classList.contains('subcategory-header-item');
+                if (!isTargetSubcategoryHeader) {
+                    // Don't show visual feedback when dragging subcategory over regular links
+                    return;
+                }
+            }
             
             // Determine insert position based on mouse position
             const rect = targetLink.getBoundingClientRect();
@@ -247,7 +187,7 @@ class DragDropManager {
         
         const targetPosition = insertAfter ? targetLinkIndex + 1 : targetLinkIndex;
         
-        if (this.draggedType === 'link' || this.draggedType === 'bookmark') {
+        if (this.draggedType === 'link' || this.draggedType === 'bookmark' || this.draggedType === 'subcategory-header') {
             // Get source link information
             const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
             const sourceLinkIndex = parseInt(this.draggedElement.dataset.linkIndex || this.draggedElement.dataset.bookmarkIndex);
@@ -263,13 +203,19 @@ class DragDropManager {
 
     // Links list drag handlers
     handleLinksListDragOver(e) {
-        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark' && this.draggedType !== 'inbox') return;
+        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark' && this.draggedType !== 'inbox' && this.draggedType !== 'subcategory-header') return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
         
         const linksList = e.target.closest('.links-list, .bookmarks-list, .subcategory-links-list');
         if (linksList) {
+            // If dragging a subcategory header, don't show any visual feedback on link lists
+            if (this.draggedType === 'subcategory-header') {
+                // Subcategory headers shouldn't show drop feedback on any link lists
+                return;
+            }
+            
             linksList.classList.add('drag-over-empty');
         }
     }
@@ -297,19 +243,14 @@ class DragDropManager {
                                            linksList.closest('.category-column').dataset.categoryIndex);
         const targetSubcategoryIndex = linksList.dataset.subcategoryIndex ? parseInt(linksList.dataset.subcategoryIndex) : null;
         
-        if (this.draggedType === 'link' || this.draggedType === 'bookmark') {
+        if (this.draggedType === 'link' || this.draggedType === 'bookmark' || this.draggedType === 'subcategory-header') {
             // Get source information
             const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
             const sourceLinkIndex = parseInt(this.draggedElement.dataset.linkIndex || this.draggedElement.dataset.bookmarkIndex);
             const sourceSubcategoryIndex = this.draggedElement.dataset.subcategoryIndex ? parseInt(this.draggedElement.dataset.subcategoryIndex) : null;
             
-            // Drop at the end of the target list
-            let targetPosition;
-            if (targetSubcategoryIndex !== null) {
-                targetPosition = this.dashboard.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].links.length;
-            } else {
-                targetPosition = this.dashboard.categories[targetCategoryIndex].links.length;
-            }
+            // Drop at the end of the target list  
+            const targetPosition = this.dashboard.categories[targetCategoryIndex].links.length;
             
             this.dashboard.moveLinkToPosition(sourceCategoryIndex, sourceLinkIndex, sourceSubcategoryIndex, targetCategoryIndex, targetPosition, targetSubcategoryIndex);
         } else if (this.draggedType === 'inbox') {
@@ -321,13 +262,21 @@ class DragDropManager {
 
     // Category body drag handlers
     handleCategoryBodyDragOver(e) {
-        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark' && this.draggedType !== 'inbox' && this.draggedType !== 'subcategory') return;
+        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark' && this.draggedType !== 'inbox' && this.draggedType !== 'subcategory-header') return;
         
         // Only handle this if we're not inside a subcategory
         const subcategoryList = e.target.closest('.subcategory-links-list');
         const subcategoryBody = e.target.closest('.subcategory-body');
         if (subcategoryList || subcategoryBody) {
             return; // Let subcategory handlers deal with this
+        }
+        
+        // Don't show visual feedback when dragging subcategory headers over category bodies
+        if (this.draggedType === 'subcategory-header') {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            return;
         }
         
         e.preventDefault();
@@ -352,6 +301,7 @@ class DragDropManager {
 
     handleCategoryBodyDrop(e) {
         if (!this.draggedElement) return;
+        
         e.preventDefault();
         e.stopPropagation();
         
@@ -360,7 +310,7 @@ class DragDropManager {
         
         const targetCategoryIndex = parseInt(categoryBody.closest('.category-column').dataset.categoryIndex);
         
-        if (this.draggedType === 'link' || this.draggedType === 'bookmark') {
+        if (this.draggedType === 'link' || this.draggedType === 'bookmark' || this.draggedType === 'subcategory-header') {
             // Get source information
             const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
             const sourceLinkIndex = parseInt(this.draggedElement.dataset.linkIndex || this.draggedElement.dataset.bookmarkIndex);
@@ -374,21 +324,18 @@ class DragDropManager {
             // Handle inbox item drop
             const inboxIndex = parseInt(this.draggedElement.dataset.inboxIndex);
             this.dashboard.moveInboxItemToLinkPosition(inboxIndex, targetCategoryIndex, -1, null);
-        } else if (this.draggedType === 'subcategory') {
-            // Handle subcategory drop
-            const sourceCategoryIndex = parseInt(this.draggedElement.dataset.categoryIndex);
-            const sourceSubcategoryIndex = parseInt(this.draggedElement.dataset.subcategoryIndex);
-            
-            // Drop at the end of the target category's subcategories
-            const targetPosition = this.dashboard.categories[targetCategoryIndex].subcategories.length;
-            
-            this.dashboard.moveSubcategoryToPosition(sourceCategoryIndex, sourceSubcategoryIndex, targetCategoryIndex, targetPosition);
         }
     }
 
     // Subcategory body drag handlers
     handleSubcategoryBodyDragOver(e) {
-        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark' && this.draggedType !== 'inbox') return;
+        if (this.draggedType !== 'link' && this.draggedType !== 'bookmark' && this.draggedType !== 'inbox' && this.draggedType !== 'subcategory-header') return;
+        
+        // Don't show visual feedback when dragging subcategory headers over subcategory bodies
+        if (this.draggedType === 'subcategory-header') {
+            return;
+        }
+        
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
@@ -428,7 +375,7 @@ class DragDropManager {
             const sourceSubcategoryIndex = this.draggedElement.dataset.subcategoryIndex ? parseInt(this.draggedElement.dataset.subcategoryIndex) : null;
             
             // Drop at the end of the target subcategory's links
-            const targetPosition = this.dashboard.categories[targetCategoryIndex].subcategories[targetSubcategoryIndex].links.length;
+            const targetPosition = this.dashboard.categories[targetCategoryIndex].links.length;
             
             this.dashboard.moveLinkToPosition(sourceCategoryIndex, sourceLinkIndex, sourceSubcategoryIndex, targetCategoryIndex, targetPosition, targetSubcategoryIndex);
         } else if (this.draggedType === 'inbox') {

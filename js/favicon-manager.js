@@ -66,10 +66,25 @@ class FaviconManager {
     // Get Google service specific favicon
     getGoogleServiceFavicon(parsedUrl) {
         const hostname = parsedUrl.hostname.toLowerCase();
+        const pathname = parsedUrl.pathname.toLowerCase();
         
-        // Google service specific favicons
+        // Handle docs.google.com URLs by checking the path to determine the specific service
+        if (hostname === 'docs.google.com') {
+            if (pathname.includes('/spreadsheets/')) {
+                return 'https://ssl.gstatic.com/docs/spreadsheets/favicon_jfk2.png'; // Sheets
+            } else if (pathname.includes('/presentation/')) {
+                return 'https://ssl.gstatic.com/docs/presentations/images/favicon5.ico'; // Slides
+            } else if (pathname.includes('/forms/')) {
+                return 'https://ssl.gstatic.com/docs/spreadsheets/forms/favicon_qp2.png'; // Forms
+            } else if (pathname.includes('/document/') || pathname.includes('/create')) {
+                return 'https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico'; // Docs
+            }
+            // Default to Docs favicon for docs.google.com
+            return 'https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico';
+        }
+        
+        // Google service specific favicons for dedicated hostnames
         const googleFavicons = {
-            'docs.google.com': 'https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico',
             'sheets.google.com': 'https://ssl.gstatic.com/docs/spreadsheets/favicon_jfk2.png',
             'slides.google.com': 'https://ssl.gstatic.com/docs/presentations/images/favicon5.ico',
             'drive.google.com': 'https://ssl.gstatic.com/docs/doclist/images/drive_2022q3_32dp.png',

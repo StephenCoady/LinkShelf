@@ -73,11 +73,12 @@ body.loading {
     background-color: #2A3642;
     border-bottom: 1px solid #3C4D5E;
     padding: 8px 16px 16px;
-    margin-left: 50px; /* Push header to the right of burger button */
+    max-width: 1600px; /* Match categories container */
+    margin: 0 auto; /* Center like categories container */
     position: sticky;
     top: 0;
     z-index: 1000;
-    transition: margin-left 0.3s ease;
+    transition: transform 0.3s ease;
     height: var(--header-height);
     border-radius: 6px;
 }
@@ -86,7 +87,8 @@ body.loading {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    max-width: 100%;
+    width: 100%;
+    padding-left: 50px; /* Space for burger button */
     gap: 20px;
 }
 
@@ -663,7 +665,11 @@ body.sidebar-open .dashboard {
 }
 
 body.sidebar-open .header {
-    margin-left: 330px; /* 280px sidebar + 50px burger button */
+    transform: translateX(140px); /* Half the sidebar width to account for centering */
+}
+
+body.sidebar-open .header-content {
+    padding-left: 50px; /* Just burger button space */
 }
 
 /* Favourites Bar */
@@ -1095,7 +1101,7 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
     padding: 6px 13px;
     border: none;
     border-radius: 5px;
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -1772,6 +1778,30 @@ body.dragging-category .grid-column.empty-column .column-drop-zone.drag-over {
     border-left-color: transparent;
 }
 
+/* Subcategory Header Item - Override link-item styles */
+.subcategory-header-item.link-item {
+    /* Reset link-item padding and margins to use subcategory-header's own spacing */
+    padding: 0;
+    margin-bottom: 2px;
+    /* Remove link-item hover effects for subcategory headers */
+    cursor: move; /* Show move cursor for dragging */
+}
+
+.subcategory-header-item.link-item:hover {
+    /* Remove link hover background - subcategory headers shouldn't highlight like links */
+    background-color: transparent;
+    color: inherit;
+}
+
+.subcategory-header-item.link-item .subcategory-header {
+    /* Ensure the subcategory header maintains its full styling */
+    padding: 8px 10px;
+    width: 100%;
+    /* Fill the full column width like before */
+    margin-left: 0;
+    margin-right: 0;
+}
+
 /* Legacy bookmark styles for backward compatibility */
 .bookmarks-list {
     list-style: none;
@@ -2285,7 +2315,7 @@ body.dragging-inbox .links-list.drag-over-empty {
 body.dragging-link .category-body.drag-over::before,
 body.dragging-bookmark .category-body.drag-over::before,
 body.dragging-inbox .category-body.drag-over::before,
-body.dragging-subcategory .category-body.drag-over::before {
+body.dragging-subcategory-header .category-body.drag-over::before {
     content: '';
     position: absolute;
     top: -2px;
@@ -2298,7 +2328,7 @@ body.dragging-subcategory .category-body.drag-over::before {
 }
 
 /* Subcategory drag over category body feedback */
-body.dragging-subcategory .category-body.drag-over {
+body.dragging-subcategory-header .category-body.drag-over {
     background-color: rgba(52, 199, 128, 0.05);
     border: 1px dashed #34C780;
     border-radius: 4px;
@@ -2434,9 +2464,9 @@ body.dragging-inbox .subcategory-body.drag-over::before {
         height: 20px;
     }
     
-    /* Adjust header margin for mobile */
-    .header {
-        margin-left: 45px; /* Push header to the right of mobile burger button */
+    /* Adjust header content for mobile */
+    .header-content {
+        padding-left: 45px; /* Mobile burger button */
     }
     
     /* Adjust inbox sidebar for mobile */
@@ -2467,13 +2497,17 @@ body.dragging-inbox .subcategory-body.drag-over::before {
     }
     
     body.sidebar-open .header {
-        margin-left: 275px; /* 230px sidebar + 45px burger button */
+        transform: translateX(115px); /* Half the mobile sidebar width to account for centering */
+    }
+    
+    body.sidebar-open .header-content {
+        padding-left: 45px; /* Just mobile burger button space */
     }
     
     /* Stack header items on very small screens */
     @media (max-width: 400px) {
-        .header {
-            margin-left: 28px; /* Push header to the right of very small burger button */
+        .header-content {
+            padding-left: 28px; /* Very small burger button */
         }
         
         .header-left {
@@ -2498,7 +2532,11 @@ body.dragging-inbox .subcategory-body.drag-over::before {
         
         /* Very small screen header positioning when sidebar is open */
         body.sidebar-open .header {
-            margin-left: 258px; /* 230px sidebar + 28px very small burger button */
+            transform: translateX(115px); /* Half the sidebar width to account for centering */
+        }
+        
+        body.sidebar-open .header-content {
+            padding-left: 28px; /* Just very small burger button space */
         }
     }
 

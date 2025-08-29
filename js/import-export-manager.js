@@ -60,13 +60,13 @@ class ImportExportManager {
             
             html += `
     <DT><H3 ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(category.name)}</H3>
-    <DL><p>`;
+        <DL><p>`;
             
             // Export top-level category links
             if (category.links) {
                 category.links.forEach(link => {
                     html += `
-        <DT><A HREF="${this.escapeHtml(link.url)}" ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(link.name)}</A>`;
+            <DT><A HREF="${this.escapeHtml(link.url)}" ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(link.name)}</A>`;
                 });
             }
             
@@ -76,21 +76,21 @@ class ImportExportManager {
                     if (subcategory.links.length === 0) return; // Skip empty subcategories
                     
                     html += `
-        <DT><H3 ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(subcategory.name)}</H3>
-        <DL><p>`;
+            <DT><H3 ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(subcategory.name)}</H3>
+                <DL><p>`;
                     
                     subcategory.links.forEach(link => {
                         html += `
-            <DT><A HREF="${this.escapeHtml(link.url)}" ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(link.name)}</A>`;
+                    <DT><A HREF="${this.escapeHtml(link.url)}" ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(link.name)}</A>`;
                     });
                     
                     html += `
-        </DL><p>`;
+                </DL><p>`;
                 });
             }
             
             html += `
-    </DL><p>`;
+        </DL><p>`;
         });
 
         html += `
@@ -402,89 +402,86 @@ class ImportExportManager {
         const categories = [];
         let linkCount = 0;
         
+        console.log('Starting Netscape bookmark parsing...');
+        
         const rootDl = doc.querySelector('DL');
         if (!rootDl) {
+            console.log('ERROR: No root DL found');
             return { categories: [], favourites: [], columnCount: 5, showFavourites: false, openLinksInNewTab: true };
         }
         
-        const processFolder = (dlElement, folderName = null, isTopLevel = true) => {
-            const folderLinks = [];
-            const folderSubcategories = [];
+        console.log('Found root DL, processing folders...');
+        
+        // Process direct children of root DL - these should be categories
+        const rootDtElements = Array.from(rootDl.children).filter(child => child.tagName === 'DT');
+        console.log(`Found ${rootDtElements.length} root DT elements`);
+        
+        rootDtElements.forEach((dt, index) => {
+            // Look for H3 as a direct child of this DT
+            const h3Element = dt.querySelector(':scope > H3');
+            // Look for A as a direct child of this DT (not nested in DL)
+            const aElement = dt.querySelector(':scope > A');
             
-            const dtElements = Array.from(dlElement.children).filter(child => child.tagName === 'DT');
+            console.log(`Processing root DT ${index}: h3=${h3Element?.textContent}, hasDirectLink=${!!aElement}`);
             
-            dtElements.forEach((dt) => {
-                const h3Element = dt.querySelector('H3');
-                const aElement = dt.querySelector('A');
-                
-                if (h3Element && !aElement) {
-                    // This is a subfolder
-                    const subfolderName = h3Element.textContent.trim();
-                    if (!subfolderName) return;
-                    
-                    let subfolderDl = dt.querySelector('DL');
-                    if (!subfolderDl) {
-                        subfolderDl = dt.nextElementSibling;
-                        while (subfolderDl && subfolderDl.tagName !== 'DL') {
-                            subfolderDl = subfolderDl.nextElementSibling;
-                        }
-                    }
-                    
-                    if (subfolderDl) {
-                        if (isTopLevel) {
-                            // Top-level folders become separate categories
-                            const subfolderData = processFolder(subfolderDl, subfolderName, false);
-                            categories.push({
-                                id: `category_${Date.now()}_${Math.random()}`,
-                                name: subfolderName,
-                                links: subfolderData.links,
-                                subcategories: subfolderData.subcategories,
-                                bookmarks: []
-                            });
-                            linkCount += subfolderData.linkCount;
-                        } else {
-                            // Nested folders become subcategories
-                            const subfolderData = processFolder(subfolderDl, subfolderName, false);
-                            folderSubcategories.push({
-                                id: `subcategory_${Date.now()}_${Math.random()}`,
-                                name: subfolderName,
-                                links: subfolderData.links,
-                                collapsed: false
-                            });
-                            linkCount += subfolderData.linkCount;
-                        }
-                    }
-                    
-                } else if (aElement && !h3Element) {
-                    // This is a direct link
-                    const link = this.parseLink(aElement);
-                    if (link) {
-                        folderLinks.push(link);
-                        linkCount++;
-                    }
+            if (h3Element && !aElement) {
+                // This is a category folder
+                const categoryName = h3Element.textContent.trim();
+                if (!categoryName) {
+                    console.log(`Skipping empty category name at index ${index}`);
+                    return;
                 }
-            });
-            
-            return {
-                links: folderLinks,
-                subcategories: folderSubcategories,
-                linkCount: folderLinks.length
-            };
-        };
+                
+                console.log(`Processing category: "${categoryName}"`);
+                
+                // Find the associated DL element for this category
+                // In proper Netscape format, the DL should be a direct child of the DT
+                let categoryDl = dt.querySelector('DL');
+                
+                console.log(`Looking for DL in category "${categoryName}": found=${!!categoryDl}`);
+                
+                if (categoryDl) {
+                    console.log(`Found DL for category "${categoryName}", processing contents...`);
+                    const categoryData = this.processCategoryContents(categoryDl);
+                    
+                    categories.push({
+                        id: `category_${Date.now()}_${Math.random()}`,
+                        name: categoryName,
+                        links: categoryData.links,
+                        subcategories: categoryData.subcategories,
+                        bookmarks: []
+                    });
+                    
+                    linkCount += categoryData.linkCount;
+                    console.log(`Category "${categoryName}" processed: ${categoryData.linkCount} links, ${categoryData.subcategories.length} subcategories`);
+                } else {
+                    console.log(`No DL found for category "${categoryName}"`);
+                }
+                
+            } else if (aElement && !h3Element) {
+                // This is a top-level link - add to "Unsorted" category
+                console.log(`Found top-level link: ${aElement.textContent}`);
+                const link = this.parseLink(aElement);
+                if (link) {
+                    // Find or create "Unsorted" category
+                    let unsortedCategory = categories.find(cat => cat.name === 'Unsorted Bookmarks');
+                    if (!unsortedCategory) {
+                        unsortedCategory = {
+                            id: `category_${Date.now()}_${Math.random()}`,
+                            name: 'Unsorted Bookmarks',
+                            links: [],
+                            subcategories: [],
+                            bookmarks: []
+                        };
+                        categories.push(unsortedCategory);
+                    }
+                    unsortedCategory.links.push(link);
+                    linkCount++;
+                }
+            }
+        });
         
-        // Process the root DL
-        const rootData = processFolder(rootDl, null, true);
-        
-        // Add any top-level links as an "Unsorted" category if they exist
-        if (rootData.links.length > 0) {
-            categories.push({
-                id: `category_${Date.now()}_${Math.random()}`,
-                name: 'Unsorted Bookmarks',
-                links: rootData.links,
-                subcategories: [],
-                bookmarks: []
-            });
-        }
+        console.log(`Netscape parsing complete: ${categories.length} categories, ${linkCount} total links`);
         
         return {
             categories: categories,
@@ -492,6 +489,71 @@ class ImportExportManager {
             columnCount: 5,
             showFavourites: false,
             openLinksInNewTab: true
+        };
+    }
+    
+    // Helper method to process contents of a category DL
+    processCategoryContents(dlElement) {
+        const links = [];
+        const subcategories = [];
+        let linkCount = 0;
+        
+        const dtElements = Array.from(dlElement.children).filter(child => child.tagName === 'DT');
+        
+        dtElements.forEach((dt) => {
+            // Look for H3 and A as direct children only
+            const h3Element = dt.querySelector(':scope > H3');
+            const aElement = dt.querySelector(':scope > A');
+            
+            if (h3Element && !aElement) {
+                // This is a subcategory
+                const subcategoryName = h3Element.textContent.trim();
+                if (!subcategoryName) return;
+                
+                console.log(`Processing subcategory: "${subcategoryName}"`);
+                
+                // Find the associated DL for this subcategory
+                // The DL should be a direct child of this DT
+                let subcategoryDl = dt.querySelector('DL');
+                
+                const subcategoryLinks = [];
+                if (subcategoryDl) {
+                    const subcategoryDtElements = Array.from(subcategoryDl.children).filter(child => child.tagName === 'DT');
+                    subcategoryDtElements.forEach((subDt) => {
+                        const subAElement = subDt.querySelector(':scope > A');
+                        if (subAElement) {
+                            const link = this.parseLink(subAElement);
+                            if (link) {
+                                subcategoryLinks.push(link);
+                                linkCount++;
+                            }
+                        }
+                    });
+                }
+                
+                subcategories.push({
+                    id: `subcategory_${Date.now()}_${Math.random()}`,
+                    name: subcategoryName,
+                    links: subcategoryLinks,
+                    collapsed: false
+                });
+                
+                console.log(`Subcategory "${subcategoryName}" processed: ${subcategoryLinks.length} links`);
+                
+            } else if (aElement && !h3Element) {
+                // This is a direct link in the category
+                const link = this.parseLink(aElement);
+                if (link) {
+                    links.push(link);
+                    linkCount++;
+                }
+            }
+        });
+        
+        return {
+            links: links,
+            subcategories: subcategories,
+            linkCount: linkCount
         };
     }
 
