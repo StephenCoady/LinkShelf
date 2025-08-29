@@ -21,11 +21,21 @@ class LinkShelfDashboard {
         this.currentEditingCategory = null;
         this.currentEditingFavourite = null;
         this.editingFavouriteIndex = null;
-        this.draggedElement = null;
-        this.draggedType = null;
-        this.sidebarOpen = this.loadSidebarState();
         this.searchQuery = '';
         this.searchTimeout = null;
+        
+        // Initialize manager classes
+        this.storageManager = new StorageManager();
+        this.faviconManager = new FaviconManager();
+        this.dragDropManager = new DragDropManager(this);
+        this.importExportManager = new ImportExportManager(this);
+        
+        // Load sidebar state
+        this.sidebarOpen = this.storageManager.loadSidebarState();
+        
+        // Deprecated properties (now handled by dragDropManager)
+        this.draggedElement = null;
+        this.draggedType = null;
     }
 
     // Initialize the dashboard
@@ -51,16 +61,7 @@ class LinkShelfDashboard {
     // Data Management
     async loadData() {
         try {
-            const result = await chrome.storage.local.get([
-                'linkshelf_shelves',
-                'linkshelf_current_shelf_id',
-                'linkshelf_categories', 
-                'linkshelf_column_count',
-                'linkshelf_favourites',
-                'linkshelf_show_favourites',
-                'linkshelf_open_links_new_tab',
-                'linkshelf_inbox'
-            ]);
+            const result = await this.storageManager.loadData();
             
             // Load shelves data or migrate from old format
             this.shelves = result.linkshelf_shelves || [];
@@ -83,7 +84,7 @@ class LinkShelfDashboard {
                 this.currentShelfId = defaultShelf.id;
                 
                 // Clear old storage keys after migration
-                await chrome.storage.local.remove([
+                await this.storageManager.removeStorageKeys([
                     'linkshelf_categories',
                     'linkshelf_column_count', 
                     'linkshelf_favourites',
@@ -216,14 +217,10 @@ class LinkShelfDashboard {
 
     // Set up listener for storage changes to auto-refresh inbox
     setupStorageListener() {
-        chrome.storage.onChanged.addListener((changes, areaName) => {
-            if (areaName === 'local' && changes.linkshelf_inbox) {
-                // Update local inbox data with the new value
-                this.inbox = changes.linkshelf_inbox.newValue || [];
-                // Re-render the inbox to show updated content
-                this.renderInbox();
-                console.log('Inbox auto-refreshed with new data');
-            }
+        this.storageManager.setupStorageListener((newInboxData) => {
+            this.inbox = newInboxData;
+            this.renderInbox();
+            console.log('Inbox auto-refreshed with new data');
         });
     }
 
@@ -262,7 +259,7 @@ class LinkShelfDashboard {
             this.saveCurrentShelfData();
             
             // Save all shelves and global data
-            await chrome.storage.local.set({ 
+            await this.storageManager.saveData({ 
                 'linkshelf_shelves': this.shelves,
                 'linkshelf_current_shelf_id': this.currentShelfId,
                 'linkshelf_inbox': this.inbox
@@ -273,36 +270,16 @@ class LinkShelfDashboard {
     }
 
     generateId() {
-        return 'id_' + Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+        return UIUtils.generateId();
     }
 
     // Visual Effects
     flashNewItem(selector, delay = 100) {
-        // Small delay to ensure DOM has rendered
-        setTimeout(() => {
-            const element = document.querySelector(selector);
-            if (element) {
-                element.classList.add('new-item-flash');
-                
-                // Remove the class after animation completes
-                setTimeout(() => {
-                    element.classList.remove('new-item-flash');
-                }, 2500);
-            }
-        }, delay);
+        UIUtils.flashNewItem(selector, delay);
     }
 
     flashNewItemByElement(element, delay = 100) {
-        if (!element) return;
-        
-        setTimeout(() => {
-            element.classList.add('new-item-flash');
-            
-            // Remove the class after animation completes
-            setTimeout(() => {
-                element.classList.remove('new-item-flash');
-            }, 2500);
-        }, delay);
+        UIUtils.flashNewItemByElement(element, delay);
     }
 
     // Event Listeners
@@ -475,9 +452,7 @@ class LinkShelfDashboard {
         ).join('');
 
         this.setupCategoryEventListeners();
-        this.setupColumnDropZones();
-        this.setupBookmarkDragDrop();
-        this.setupInboxDropZone();
+        this.dragDropManager.setupDragAndDrop();
         this.attachDynamicEventListeners();
     }
 
@@ -1761,21 +1736,11 @@ class LinkShelfDashboard {
 
     // Sidebar State Management
     loadSidebarState() {
-        try {
-            const saved = localStorage.getItem('linkshelf_sidebar_open');
-            return saved === 'true';
-        } catch (error) {
-            console.warn('Failed to load sidebar state:', error);
-            return false;
-        }
+        return this.storageManager.loadSidebarState();
     }
 
     saveSidebarState() {
-        try {
-            localStorage.setItem('linkshelf_sidebar_open', this.sidebarOpen.toString());
-        } catch (error) {
-            console.warn('Failed to save sidebar state:', error);
-        }
+        this.storageManager.saveSidebarState(this.sidebarOpen);
     }
 
     initializeSidebar() {
@@ -1813,7 +1778,7 @@ class LinkShelfDashboard {
         }
         
         // Save the state
-        this.saveSidebarState();
+        this.storageManager.saveSidebarState(this.sidebarOpen);
     }
 
     renderInbox() {
@@ -2287,26 +2252,7 @@ class LinkShelfDashboard {
     }
 
     setupInboxDropZone() {
-        const inboxContent = document.getElementById('inbox-content');
-        if (!inboxContent) return;
-
-        // Check if we've already set up listeners to prevent duplicates
-        if (inboxContent.hasAttribute('data-inbox-listeners-setup')) {
-            return;
-        }
-
-        // Mark as having listeners setup
-        inboxContent.setAttribute('data-inbox-listeners-setup', 'true');
-
-        // Bind methods to this instance
-        this.boundHandleInboxDragOver = this.boundHandleInboxDragOver || ((e) => this.handleInboxDragOver(e));
-        this.boundHandleInboxDragLeave = this.boundHandleInboxDragLeave || ((e) => this.handleInboxDragLeave(e));
-        this.boundHandleInboxDrop = this.boundHandleInboxDrop || ((e) => this.handleInboxDrop(e));
-
-        // Add the event listeners
-        inboxContent.addEventListener('dragover', this.boundHandleInboxDragOver);
-        inboxContent.addEventListener('dragleave', this.boundHandleInboxDragLeave);
-        inboxContent.addEventListener('drop', this.boundHandleInboxDrop);
+        this.dragDropManager.setupInboxDragDrop();
     }
 
     handleInboxDragOver(e) {
@@ -2782,19 +2728,11 @@ class LinkShelfDashboard {
     }
     
     extractDomain(url) {
-        try {
-            return new URL(url).hostname.replace('www.', '');
-        } catch {
-            return url;
-        }
+        return UIUtils.extractDomain(url);
     }
     
     highlightText(element, text, query) {
-        if (!element || !text || !query) return;
-        
-        const regex = new RegExp(`(${this.escapeRegex(query)})`, 'gi');
-        const highlightedText = text.replace(regex, '<span class="search-highlight">$1</span>');
-        element.innerHTML = highlightedText;
+        UIUtils.highlightText(element, text, query);
     }
     
     highlightLinkText(linkElement, link, query) {
@@ -2805,10 +2743,7 @@ class LinkShelfDashboard {
     }
     
     removeHighlights(element) {
-        const highlights = element.querySelectorAll('.search-highlight');
-        highlights.forEach(highlight => {
-            highlight.outerHTML = highlight.innerHTML;
-        });
+        UIUtils.removeHighlights(element);
         
         // Also restore original text for category and subcategory titles
         const categoryTitle = element.querySelector('.category-title');
@@ -2883,22 +2818,12 @@ class LinkShelfDashboard {
     }
     
     escapeRegex(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return UIUtils.escapeRegex(string);
     }
     
     // Helper method for relative time display
     getRelativeTime(timestamp) {
-        const now = Date.now();
-        const diff = now - timestamp;
-        const minutes = Math.floor(diff / 60000);
-        const hours = Math.floor(diff / 3600000);
-        const days = Math.floor(diff / 86400000);
-        
-        if (minutes < 1) return 'Just now';
-        if (minutes < 60) return `${minutes}m ago`;
-        if (hours < 24) return `${hours}h ago`;
-        if (days < 7) return `${days}d ago`;
-        return new Date(timestamp).toLocaleDateString();
+        return UIUtils.getRelativeTime(timestamp);
     }
     
     // Global Keyboard Shortcuts
@@ -2930,118 +2855,25 @@ class LinkShelfDashboard {
 
     // URL and Favicon Handling
     normalizeUrl(url) {
-        if (!url || !url.trim()) {
-            return '';
-        }
-        
-        const trimmedUrl = url.trim();
-        
-        // Already has protocol
-        if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
-            return trimmedUrl;
-        }
-        
-        // Default to https://
-        return 'https://' + trimmedUrl;
+        return UIUtils.normalizeUrl(url);
     }
 
     async fetchFaviconAsDataUrl(url) {
-        const parsedUrl = new URL(url);
-        
-        // If the URL has a specific path/filename, treat it as a direct favicon URL
-        if (parsedUrl.pathname !== '/' && (parsedUrl.pathname.endsWith('.ico') || 
-                                          parsedUrl.pathname.endsWith('.png') || 
-                                          parsedUrl.pathname.endsWith('.jpg') || 
-                                          parsedUrl.pathname.endsWith('.jpeg') || 
-                                          parsedUrl.pathname.endsWith('.gif') || 
-                                          parsedUrl.pathname.endsWith('.svg'))) {
-            // Direct favicon URL provided
-            return await this.tryFetchFavicon(url);
-        }
-        
-        // Check for special Google services and provide specific favicons
-        const googleFaviconUrl = this.getGoogleServiceFavicon(parsedUrl);
-        if (googleFaviconUrl) {
-            try {
-                return await this.tryFetchFavicon(googleFaviconUrl);
-            } catch (error) {
-                console.warn('Google service favicon failed, falling back to domain favicon:', error.message);
-            }
-        }
-        
-        // Try domain favicon with fallback to parent domain
-        const domains = this.getDomainFallbackChain(parsedUrl);
-        
-        for (const domain of domains) {
-            try {
-                const faviconUrl = `${domain}/favicon.ico`;
-                return await this.tryFetchFavicon(faviconUrl);
-            } catch (error) {
-                console.warn(`Failed to fetch favicon from ${domain}:`, error.message);
-                // Continue to next domain in fallback chain
-            }
-        }
-        
-        // If all attempts failed, throw error
-        throw new Error(`Could not fetch favicon from any domain in chain: ${domains.join(', ')}`);
+        return await this.faviconManager.fetchFaviconAsDataUrl(url);
     }
 
+    // These methods are now handled by faviconManager
+    // Kept for backwards compatibility
     getGoogleServiceFavicon(parsedUrl) {
-        const hostname = parsedUrl.hostname.toLowerCase();
-        
-        // Google service specific favicons
-        const googleFavicons = {
-            'docs.google.com': 'https://ssl.gstatic.com/docs/documents/images/kix-favicon7.ico',
-            'sheets.google.com': 'https://ssl.gstatic.com/docs/spreadsheets/favicon_jfk2.png',
-            'slides.google.com': 'https://ssl.gstatic.com/docs/presentations/images/favicon5.ico',
-            'drive.google.com': 'https://ssl.gstatic.com/docs/doclist/images/drive_2022q3_32dp.png',
-            'forms.google.com': 'https://ssl.gstatic.com/docs/spreadsheets/forms/favicon_qp2.png',
-            'calendar.google.com': 'https://ssl.gstatic.com/calendar/images/favicon_v2014_30.ico',
-            'mail.google.com': 'https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico',
-            'gmail.com': 'https://ssl.gstatic.com/ui/v1/icons/mail/rfr/gmail.ico',
-            'maps.google.com': 'https://maps.gstatic.com/favicon.ico',
-            'photos.google.com': 'https://www.gstatic.com/photos/favicon.ico',
-            'youtube.com': 'https://www.youtube.com/s/desktop/7bb16b9b/img/favicon_32x32.png',
-            'www.youtube.com': 'https://www.youtube.com/s/desktop/7bb16b9b/img/favicon_32x32.png',
-            'meet.google.com': 'https://fonts.gstatic.com/s/i/productlogos/meet_2020q4/v6/web-32dp/logo_meet_2020q4_color_2x_web_32dp.png',
-            'classroom.google.com': 'https://ssl.gstatic.com/classroom/favicon.png'
-        };
-        
-        return googleFavicons[hostname] || null;
+        return this.faviconManager.getGoogleServiceFavicon(parsedUrl);
     }
 
     getDomainFallbackChain(parsedUrl) {
-        const domains = [];
-        const parts = parsedUrl.hostname.split('.');
-        
-        // Start with the full domain
-        domains.push(parsedUrl.origin);
-        
-        // If it's a subdomain, try parent domains
-        // e.g., source.redhat.com -> redhat.com, sub.example.co.uk -> example.co.uk
-        if (parts.length > 2) {
-            // For each subdomain level, try removing one level
-            for (let i = 1; i < parts.length - 1; i++) {
-                const parentDomain = parts.slice(i).join('.');
-                domains.push(`${parsedUrl.protocol}//${parentDomain}`);
-            }
-        }
-        
-        return domains;
+        return this.faviconManager.getDomainFallbackChain(parsedUrl);
     }
 
     async tryFetchFavicon(faviconUrl) {
-        const response = await fetch(faviconUrl);
-        if (!response.ok) {
-            throw new Error(`Favicon fetch failed: ${response.status} ${response.statusText}`);
-        }
-        
-        const blob = await response.blob();
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(blob);
-        });
+        return await this.faviconManager.tryFetchFavicon(faviconUrl);
     }
 
     handleFavouriteUrlInputDebounced(e) {
@@ -3347,55 +3179,13 @@ class LinkShelfDashboard {
         });
     }
 
+    // Drag and drop setup delegated to dragDropManager
     setupColumnDropZones() {
-        // Setup drop zones for category positioning within columns
-        document.querySelectorAll('.column-drop-zone').forEach(dropZone => {
-            dropZone.addEventListener('dragover', (e) => this.handleColumnDropZoneDragOver(e));
-            dropZone.addEventListener('dragleave', (e) => this.handleColumnDropZoneDragLeave(e));
-            dropZone.addEventListener('drop', (e) => this.handleColumnDropZoneDrop(e));
-        });
-        
-        // Setup grid columns for drag events
-        document.querySelectorAll('.grid-column').forEach(column => {
-            column.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-            });
-        });
+        this.dragDropManager.setupColumnDropZones();
     }
 
     setupBookmarkDragDrop() {
-        // Setup drag and drop for link/bookmark items
-        const linkItems = document.querySelectorAll('.link-item, .bookmark-item');
-        linkItems.forEach(item => {
-            item.addEventListener('dragover', (e) => this.handleLinkDragOver(e));
-            item.addEventListener('dragleave', (e) => this.handleLinkDragLeave(e));
-            item.addEventListener('drop', (e) => this.handleLinkDrop(e));
-        });
-        
-        // Setup drop zones on all link lists
-        const linkLists = document.querySelectorAll('.links-list, .bookmarks-list, .subcategory-links-list');
-        linkLists.forEach(list => {
-            list.addEventListener('dragover', (e) => this.handleLinksListDragOver(e));
-            list.addEventListener('dragleave', (e) => this.handleLinksListDragLeave(e));
-            list.addEventListener('drop', (e) => this.handleLinksListDrop(e));
-        });
-        
-        // Setup drop zones on category and subcategory bodies
-        const categoryBodies = document.querySelectorAll('.category-body');
-        categoryBodies.forEach(body => {
-            body.addEventListener('dragover', (e) => this.handleCategoryBodyDragOver(e));
-            body.addEventListener('dragleave', (e) => this.handleCategoryBodyDragLeave(e));
-            body.addEventListener('drop', (e) => this.handleCategoryBodyDrop(e));
-        });
-        
-        // Setup drop zones on subcategory bodies
-        const subcategoryBodies = document.querySelectorAll('.subcategory-body');
-        subcategoryBodies.forEach(body => {
-            body.addEventListener('dragover', (e) => this.handleSubcategoryBodyDragOver(e));
-            body.addEventListener('dragleave', (e) => this.handleSubcategoryBodyDragLeave(e));
-            body.addEventListener('drop', (e) => this.handleSubcategoryBodyDrop(e));
-        });
+        this.dragDropManager.setupLinkDragDrop();
     }
 
     setupEmptyStateEventListeners() {
@@ -3887,131 +3677,19 @@ class LinkShelfDashboard {
     }
 
     exportBookmarks() {
-        // Export current shelf data
-        const currentShelf = this.getCurrentShelf();
-        const data = {
-            shelfName: currentShelf.name,
-            categories: this.categories,
-            favourites: this.favourites,
-            columnCount: this.columnCount,
-            showFavourites: this.showFavourites,
-            openLinksInNewTab: this.openLinksInNewTab,
-            exportDate: new Date().toISOString(),
-            version: '2.0', // Updated version for shelf support
-            isShelfExport: true
-        };
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const shelfName = currentShelf.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-        a.download = `linkshelf-${shelfName}-${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
-        this.showToast(`Shelf "${currentShelf.name}" exported successfully`, 'success');
+        this.importExportManager.exportBookmarks();
     }
 
     exportToNetscape() {
-        // Generate Netscape bookmark format HTML
-        const formatDate = (date) => {
-            return Math.floor(date.getTime() / 1000).toString();
-        };
-        
-        const now = new Date();
-        const dateStr = formatDate(now);
-        
-        let html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
-<!-- This is an automatically generated file.
-     It will be read and overwritten.
-     DO NOT EDIT! -->
-<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
-<TITLE>LinkShelf Bookmarks</TITLE>
-<H1>LinkShelf Bookmarks</H1>
-
-<DL><p>`;
-
-        // Export each category as a folder
-        this.categories.forEach(category => {
-            if (category.links.length === 0 && category.subcategories.length === 0) {
-                return; // Skip empty categories
-            }
-            
-            html += `
-    <DT><H3 ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(category.name)}</H3>
-    <DL><p>`;
-            
-            // Export top-level category links
-            if (category.links) {
-                category.links.forEach(link => {
-                    html += `
-        <DT><A HREF="${this.escapeHtml(link.url)}" ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(link.name)}</A>`;
-                });
-            }
-            
-            // Export subcategories as nested folders
-            if (category.subcategories) {
-                category.subcategories.forEach(subcategory => {
-                    if (subcategory.links.length === 0) return; // Skip empty subcategories
-                    
-                    html += `
-        <DT><H3 ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(subcategory.name)}</H3>
-        <DL><p>`;
-                    
-                    subcategory.links.forEach(link => {
-                        html += `
-            <DT><A HREF="${this.escapeHtml(link.url)}" ADD_DATE="${dateStr}" LAST_MODIFIED="${dateStr}">${this.escapeHtml(link.name)}</A>`;
-                    });
-                    
-                    html += `
-        </DL><p>`;
-                });
-            }
-            
-            html += `
-    </DL><p>`;
-        });
-
-        html += `
-</DL>`;
-
-        const blob = new Blob([html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `linkshelf-bookmarks-${new Date().toISOString().split('T')[0]}.html`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        
-        this.showToast('Bookmarks exported to Netscape format successfully', 'success');
+        this.importExportManager.exportToNetscape();
     }
 
     triggerImport() {
-        document.getElementById('import-file').click();
+        this.importExportManager.triggerImport();
     }
 
     triggerPapalyImport() {
-        // Create a temporary file input for Papaly imports
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = '.html';
-        fileInput.style.display = 'none';
-        
-        fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            this.importPapalyFile(file);
-            document.body.removeChild(fileInput); // Clean up
-        });
-        
-        document.body.appendChild(fileInput);
-        fileInput.click();
+        this.importExportManager.triggerPapalyImport();
     }
 
     async importPapalyFile(file) {
@@ -4045,76 +3723,7 @@ class LinkShelfDashboard {
     }
 
     async importBookmarks(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        try {
-            const text = await file.text();
-            
-            // Detect file format - HTML (Papaly/Netscape) vs JSON (LinkShelf)
-            let importedData;
-            let isShelfExport = false;
-            let shelfName = null;
-            
-            if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<HTML') || text.trim().startsWith('<html')) {
-                // HTML format - auto-detect Papaly vs standard Netscape
-                importedData = this.parseHtmlBookmarks(text);
-                shelfName = `Imported from ${file.name.replace(/\.[^/.]+$/, "")}`;
-            } else {
-                // JSON format (LinkShelf export)
-                const data = JSON.parse(text);
-                if (!data.categories || !Array.isArray(data.categories)) {
-                    throw new Error('Invalid export file format');
-                }
-                
-                isShelfExport = data.isShelfExport || data.version === '2.0';
-                shelfName = data.shelfName || `Imported from ${file.name.replace(/\.[^/.]+$/, "")}`;
-                
-                importedData = {
-                    categories: data.categories,
-                    favourites: data.favourites || [],
-                    columnCount: data.columnCount || 3,
-                    showFavourites: data.showFavourites !== false,
-                    openLinksInNewTab: data.openLinksInNewTab !== false
-                };
-            }
-
-            // Create a new shelf for the imported data
-            const newShelf = {
-                id: this.generateId(),
-                name: shelfName,
-                categories: importedData.categories,
-                favourites: importedData.favourites,
-                columnCount: importedData.columnCount,
-                showFavourites: importedData.showFavourites,
-                openLinksInNewTab: importedData.openLinksInNewTab,
-                createdAt: Date.now()
-            };
-            
-            // Add the new shelf
-            this.shelves.push(newShelf);
-            
-            // Switch to the new shelf
-            this.currentShelfId = newShelf.id;
-            this.loadCurrentShelf();
-            
-            await this.saveData();
-            this.renderDashboard();
-            this.closeModal('settings-modal');
-            
-            this.showToast(`Successfully imported ${importedData.categories.length} categories as "${shelfName}"`, 'success');
-            
-            // Automatically fetch favicons for imported links
-            setTimeout(() => {
-                this.fetchFaviconsForImportedData();
-            }, 1000); // Small delay to let the success message show
-        } catch (error) {
-            console.error('Error importing bookmarks:', error);
-            this.showToast('Error importing bookmarks: ' + error.message, 'error');
-        }
-
-        // Reset file input
-        e.target.value = '';
+        await this.importExportManager.importBookmarks(e);
     }
 
     parseHtmlBookmarks(htmlText) {
@@ -4457,104 +4066,7 @@ class LinkShelfDashboard {
     }
 
     async fetchFaviconsForImportedData() {
-        // Collect all links that don't have faviconData
-        const linksToFetch = [];
-        
-        // Collect from categories and subcategories
-        this.categories.forEach((category, categoryIndex) => {
-            // Category top-level links
-            if (category.links) {
-                category.links.forEach((link, linkIndex) => {
-                    if (!link.faviconData) {
-                        linksToFetch.push({
-                            link: link,
-                            path: `category-${categoryIndex}-link-${linkIndex}`,
-                            location: 'category',
-                            categoryIndex,
-                            linkIndex
-                        });
-                    }
-                });
-            }
-            
-            // Subcategory links
-            if (category.subcategories) {
-                category.subcategories.forEach((subcategory, subcategoryIndex) => {
-                    if (subcategory.links) {
-                        subcategory.links.forEach((link, linkIndex) => {
-                            if (!link.faviconData) {
-                                linksToFetch.push({
-                                    link: link,
-                                    path: `category-${categoryIndex}-subcategory-${subcategoryIndex}-link-${linkIndex}`,
-                                    location: 'subcategory',
-                                    categoryIndex,
-                                    subcategoryIndex,
-                                    linkIndex
-                                });
-                            }
-                        });
-                    }
-                });
-            }
-        });
-        
-        if (linksToFetch.length === 0) {
-            return; // No links need favicons
-        }
-        
-        console.log(`Fetching favicons for ${linksToFetch.length} imported links...`);
-        this.showToast(`Fetching favicons for ${linksToFetch.length} links...`, 'info');
-        
-        let fetchedCount = 0;
-        let errorCount = 0;
-        
-        // Process links in batches to avoid overwhelming the server
-        const batchSize = 5;
-        for (let i = 0; i < linksToFetch.length; i += batchSize) {
-            const batch = linksToFetch.slice(i, i + batchSize);
-            
-            await Promise.allSettled(batch.map(async (item) => {
-                try {
-                    const faviconData = await this.fetchFaviconAsDataUrl(item.link.url);
-                    
-                    // Update the link with the fetched favicon
-                    if (item.location === 'category') {
-                        const linksArray = this.categories[item.categoryIndex].links || this.categories[item.categoryIndex].bookmarks;
-                        linksArray[item.linkIndex].faviconData = faviconData;
-                    } else if (item.location === 'subcategory') {
-                        this.categories[item.categoryIndex].subcategories[item.subcategoryIndex].links[item.linkIndex].faviconData = faviconData;
-                    }
-                    
-                    fetchedCount++;
-                    console.log(`Fetched favicon for: ${item.link.name} (${fetchedCount}/${linksToFetch.length})`);
-                } catch (error) {
-                    errorCount++;
-                    console.warn(`Failed to fetch favicon for ${item.link.name}:`, error.message);
-                }
-            }));
-            
-            // Small delay between batches to be respectful
-            if (i + batchSize < linksToFetch.length) {
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
-            
-            // Update progress every batch
-            const progress = Math.round(((i + batchSize) / linksToFetch.length) * 100);
-            this.showToast(`Fetching favicons... ${Math.min(progress, 100)}% complete`, 'info');
-        }
-        
-        // Save the updated data
-        await this.saveData();
-        
-        // Re-render to show the new favicons
-        this.renderDashboard();
-        
-        // Show completion message
-        if (errorCount > 0) {
-            this.showToast(`Favicon fetching complete! ✓ ${fetchedCount} succeeded, ✗ ${errorCount} failed`, 'success');
-        } else {
-            this.showToast(`Successfully fetched ${fetchedCount} favicons! 🎉`, 'success');
-        }
+        await this.importExportManager.fetchFaviconsForImportedData();
     }
     
     // Helper method to parse individual links
@@ -4574,21 +4086,11 @@ class LinkShelfDashboard {
 
     // UI helper methods
     escapeHtml(text) {
-        if (text == null || text === undefined) {
-            return '';
-        }
-        const map = {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#039;'
-        };
-        return String(text).replace(/[&<>"']/g, m => map[m]);
+        return UIUtils.escapeHtml(text);
     }
     
     getFallbackIcon() {
-        return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjMzY0NTU0IiByeD0iMiIvPgo8cGF0aCBkPSJNNCA2SDEyVjEwSDRWNloiIGZpbGw9IiM4Qjk1QTEiLz4KPC9zdmc+Cg==';
+        return UIUtils.getFallbackIcon();
     }
 
     // Modal Management
@@ -4634,20 +4136,7 @@ class LinkShelfDashboard {
 
     // Toast Notifications
     showToast(message, type = 'info') {
-        const toast = document.createElement('div');
-        toast.className = `toast toast-${type}`;
-        toast.textContent = message;
-        
-        document.body.appendChild(toast);
-        
-        // Trigger animation
-        setTimeout(() => toast.classList.add('show'), 100);
-        
-        // Remove toast after delay
-        setTimeout(() => {
-            toast.classList.remove('show');
-            setTimeout(() => document.body.removeChild(toast), 300);
-        }, 3000);
+        UIUtils.showToast(message, type);
     }
 
     // Utility methods for grid positioning
@@ -4685,25 +4174,7 @@ class LinkShelfDashboard {
     }
 
     findFirstAvailableSlot() {
-        // Create a map of occupied slots
-        const occupiedSlots = new Map();
-        this.categories.forEach(category => {
-            const key = `${category.column}-${category.position}`;
-            occupiedSlots.set(key, true);
-        });
-
-        // Find first available slot, column by column, position by position
-        for (let column = 0; column < this.columnCount; column++) {
-            for (let position = 0; position < 100; position++) { // Arbitrary high limit
-                const key = `${column}-${position}`;
-                if (!occupiedSlots.has(key)) {
-                    return { column, position };
-                }
-            }
-        }
-        
-        // Fallback: last column, next available position
-        return { column: this.columnCount - 1, position: 0 };
+        return UIUtils.findFirstAvailableSlot(this.categories, this.columnCount);
     }
 }
 
