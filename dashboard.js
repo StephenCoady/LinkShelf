@@ -1,6 +1,13 @@
 // LinkShelf Dashboard - Main JavaScript
 class LinkShelfDashboard {
     constructor() {
+        // Multi-shelf support
+        this.shelves = [];
+        this.currentShelfId = null;
+        this.shelfModalMode = 'create'; // 'create' or 'edit'
+        this.editingShelfIndex = null;
+        
+        // Current shelf data (backwards compatibility)
         this.categories = [];
         this.favourites = [];
         this.inbox = [];
@@ -28,12 +35,25 @@ class LinkShelfDashboard {
         this.setupEventListeners();
         this.renderDashboard();
         this.initializeSidebar();
+        
+        // Hide loading state after everything is rendered
+        await this.finishLoading();
+    }
+    
+    // Remove loading state with smooth transition
+    async finishLoading() {
+        // Small delay to ensure DOM is fully updated
+        setTimeout(() => {
+            document.body.classList.remove('loading');
+        }, 100);
     }
 
     // Data Management
     async loadData() {
         try {
             const result = await chrome.storage.local.get([
+                'linkshelf_shelves',
+                'linkshelf_current_shelf_id',
                 'linkshelf_categories', 
                 'linkshelf_column_count',
                 'linkshelf_favourites',
@@ -42,12 +62,57 @@ class LinkShelfDashboard {
                 'linkshelf_inbox'
             ]);
             
-            this.categories = result.linkshelf_categories || [];
-            this.columnCount = result.linkshelf_column_count || 5;
-            this.favourites = result.linkshelf_favourites || [];
+            // Load shelves data or migrate from old format
+            this.shelves = result.linkshelf_shelves || [];
+            this.currentShelfId = result.linkshelf_current_shelf_id || null;
+            
+            // Migration logic: If no shelves exist but old data exists, create default shelf
+            if (this.shelves.length === 0 && (result.linkshelf_categories || result.linkshelf_favourites)) {
+                console.log('Migrating existing data to shelves format...');
+                const defaultShelf = {
+                    id: this.generateId(),
+                    name: 'My Bookmarks',
+                    categories: result.linkshelf_categories || [],
+                    favourites: result.linkshelf_favourites || [],
+                    columnCount: result.linkshelf_column_count || 3,
+                    showFavourites: result.linkshelf_show_favourites !== false,
+                    openLinksInNewTab: result.linkshelf_open_links_new_tab !== false,
+                    createdAt: Date.now()
+                };
+                this.shelves = [defaultShelf];
+                this.currentShelfId = defaultShelf.id;
+                
+                // Clear old storage keys after migration
+                await chrome.storage.local.remove([
+                    'linkshelf_categories',
+                    'linkshelf_column_count', 
+                    'linkshelf_favourites',
+                    'linkshelf_show_favourites',
+                    'linkshelf_open_links_new_tab'
+                ]);
+            }
+            
+            // If no shelves exist at all, create a default shelf
+            if (this.shelves.length === 0) {
+                const defaultShelf = {
+                    id: this.generateId(),
+                    name: 'My Bookmarks',
+                    categories: [],
+                    favourites: [],
+                    columnCount: 3,
+                    showFavourites: true,
+                    openLinksInNewTab: true,
+                    createdAt: Date.now()
+                };
+                this.shelves = [defaultShelf];
+                this.currentShelfId = defaultShelf.id;
+            }
+            
+            // Load current shelf data
+            this.loadCurrentShelf();
+            
+            // Load global inbox (shared across all shelves)
             this.inbox = result.linkshelf_inbox || [];
-            this.showFavourites = result.linkshelf_show_favourites !== false; // Default to true
-            this.openLinksInNewTab = result.linkshelf_open_links_new_tab !== false; // Default to true
             
             let needsSave = false;
             
@@ -162,15 +227,45 @@ class LinkShelfDashboard {
         });
     }
 
+    // Load current shelf data into working variables
+    loadCurrentShelf() {
+        const currentShelf = this.getCurrentShelf();
+        if (currentShelf) {
+            this.categories = currentShelf.categories || [];
+            this.favourites = currentShelf.favourites || [];
+            this.columnCount = currentShelf.columnCount || 3;
+            this.showFavourites = currentShelf.showFavourites !== false;
+            this.openLinksInNewTab = currentShelf.openLinksInNewTab !== false;
+        }
+    }
+    
+    // Get current shelf object
+    getCurrentShelf() {
+        return this.shelves.find(shelf => shelf.id === this.currentShelfId) || this.shelves[0];
+    }
+    
+    // Save current working data back to current shelf
+    saveCurrentShelfData() {
+        const currentShelf = this.getCurrentShelf();
+        if (currentShelf) {
+            currentShelf.categories = this.categories;
+            currentShelf.favourites = this.favourites;
+            currentShelf.columnCount = this.columnCount;
+            currentShelf.showFavourites = this.showFavourites;
+            currentShelf.openLinksInNewTab = this.openLinksInNewTab;
+        }
+    }
+
     async saveData() {
         try {
+            // Save current working data to current shelf
+            this.saveCurrentShelfData();
+            
+            // Save all shelves and global data
             await chrome.storage.local.set({ 
-                'linkshelf_categories': this.categories,
-                'linkshelf_column_count': this.columnCount,
-                'linkshelf_favourites': this.favourites,
-                'linkshelf_inbox': this.inbox,
-                'linkshelf_show_favourites': this.showFavourites,
-                'linkshelf_open_links_new_tab': this.openLinksInNewTab
+                'linkshelf_shelves': this.shelves,
+                'linkshelf_current_shelf_id': this.currentShelfId,
+                'linkshelf_inbox': this.inbox
             });
         } catch (error) {
             console.error('Error saving data:', error);
@@ -256,6 +351,13 @@ class LinkShelfDashboard {
         document.getElementById('favourite-favicon').addEventListener('input', (e) => this.handleFavouriteFaviconUrlInput(e));
         document.getElementById('favourite-favicon').addEventListener('blur', (e) => this.handleFavouriteFaviconUrlInput(e));
 
+        // Shelf modal
+        document.getElementById('shelf-form').addEventListener('submit', (e) => this.handleShelfFormSubmit(e));
+        document.getElementById('cancel-shelf').addEventListener('click', () => this.closeModal('shelf-modal'));
+        document.getElementById('delete-shelf').addEventListener('click', () => this.handleDeleteShelfFromModal());
+        
+        // Shelf tabs
+
         // Confirmation modal
         document.getElementById('confirmation-cancel').addEventListener('click', () => this.closeModal('confirmation-modal'));
 
@@ -336,6 +438,9 @@ class LinkShelfDashboard {
         // Render favourites bar
         this.renderFavouritesBar();
         
+        // Render shelves tabs
+        this.renderShelfSelector();
+        
         const container = document.getElementById('categories-container');
         
         // Update container class for column count
@@ -374,6 +479,353 @@ class LinkShelfDashboard {
         this.setupBookmarkDragDrop();
         this.setupInboxDropZone();
         this.attachDynamicEventListeners();
+    }
+
+    // Shelves Management
+    renderShelfSelector() {
+        const currentShelfNameEl = document.getElementById('current-shelf-name');
+        const dropdownEl = document.getElementById('shelf-selector-dropdown');
+        
+        if (!currentShelfNameEl || !dropdownEl) return;
+        
+        // Update current shelf name
+        const currentShelf = this.getCurrentShelf();
+        currentShelfNameEl.textContent = currentShelf ? currentShelf.name : 'Main';
+        
+        // Clear dropdown first
+        dropdownEl.innerHTML = '';
+        
+        // Build dropdown options using DOM manipulation
+        this.shelves.forEach((shelf, index) => {
+            const isActive = shelf.id === this.currentShelfId;
+            
+            // Create main button
+            const shelfOption = document.createElement('button');
+            shelfOption.className = `dropdown-item shelf-option ${isActive ? 'active' : ''}`;
+            shelfOption.dataset.shelfId = shelf.id;
+            shelfOption.dataset.shelfIndex = index;
+            
+            // Create shelf name span
+            const shelfName = document.createElement('span');
+            shelfName.className = 'shelf-name';
+            shelfName.textContent = shelf.name;
+            
+            // Create actions container
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'shelf-item-actions';
+            
+            // Create edit button
+            const editBtn = document.createElement('button');
+            editBtn.className = 'shelf-action-btn edit-shelf-btn';
+            editBtn.dataset.shelfIndex = index;
+            editBtn.title = 'Rename';
+            actionsDiv.appendChild(editBtn);
+            
+            // Add delete button if more than one shelf exists
+            if (this.shelves.length > 1) {
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'shelf-action-btn delete-shelf-btn';
+                deleteBtn.dataset.shelfIndex = index;
+                deleteBtn.title = 'Delete';
+                deleteBtn.innerHTML = '<img src="icons/app_icons/trash_white.png" alt="Delete" style="width: 12px; height: 12px;">';
+                actionsDiv.appendChild(deleteBtn);
+            }
+            shelfOption.appendChild(shelfName);
+            shelfOption.appendChild(actionsDiv);
+            dropdownEl.appendChild(shelfOption);
+        });
+        
+        // Add "Create New Shelf" option
+        const addShelfBtn = document.createElement('button');
+        addShelfBtn.className = 'dropdown-item add-shelf';
+        addShelfBtn.textContent = '+ Create New Shelf';
+        dropdownEl.appendChild(addShelfBtn);
+        this.setupShelfSelectorEventListeners();
+    }
+    
+    setupShelfSelectorEventListeners() {
+        // Shelf selector button click
+        const selectorBtn = document.getElementById('shelf-selector-btn');
+        if (selectorBtn) {
+            selectorBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleShelfSelectorDropdown();
+            });
+        }
+        
+        // Shelf option clicks (switch shelf)
+        document.querySelectorAll('.shelf-option').forEach(option => {
+            option.addEventListener('click', (e) => {
+                // Check if click target is an action button or inside one
+                if (e.target.classList.contains('shelf-action-btn') || 
+                    e.target.closest('.shelf-action-btn') || 
+                    e.target.closest('.shelf-item-actions')) {
+                    return; // Don't switch if clicking action button
+                }
+                const shelfId = option.dataset.shelfId;
+                this.switchToShelf(shelfId);
+                this.closeShelfSelectorDropdown();
+            });
+        });
+        
+        // Edit shelf buttons
+        document.querySelectorAll('.edit-shelf-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const shelfIndex = parseInt(btn.dataset.shelfIndex);
+                this.openEditShelfModal(shelfIndex);
+                this.closeShelfSelectorDropdown();
+            });
+        });
+        
+        // Delete shelf buttons
+        document.querySelectorAll('.delete-shelf-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const shelfIndex = parseInt(btn.dataset.shelfIndex);
+                this.deleteShelf(shelfIndex);
+                this.closeShelfSelectorDropdown();
+            });
+        });
+        
+        // Add shelf button
+        document.querySelectorAll('.add-shelf').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.openCreateShelfModal();
+                this.closeShelfSelectorDropdown();
+            });
+        });
+        
+        // Global click handler to close dropdown
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.shelf-selector')) {
+                this.closeShelfSelectorDropdown();
+            }
+        });
+    }
+    
+    toggleShelfSelectorDropdown() {
+        const dropdown = document.getElementById('shelf-selector-dropdown');
+        if (!dropdown) return;
+        
+        const isOpen = dropdown.classList.contains('show');
+        if (isOpen) {
+            this.closeShelfSelectorDropdown();
+        } else {
+            dropdown.classList.add('show');
+        }
+    }
+    
+    closeShelfSelectorDropdown() {
+        const dropdown = document.getElementById('shelf-selector-dropdown');
+        if (dropdown) {
+            dropdown.classList.remove('show');
+        }
+    }
+    
+    async switchToShelf(shelfId) {
+        if (shelfId === this.currentShelfId) return;
+        
+        // Save current shelf data before switching
+        this.saveCurrentShelfData();
+        
+        // Switch to new shelf
+        this.currentShelfId = shelfId;
+        this.loadCurrentShelf();
+        
+        // Save the current shelf ID
+        await this.saveData();
+        
+        // Re-render dashboard with new shelf data
+        this.renderShelfSelector();
+        this.renderDashboard();
+        
+        this.showToast(`Switched to "${this.getCurrentShelf().name}"`, 'success');
+    }
+    
+    openCreateShelfModal() {
+        this.shelfModalMode = 'create';
+        this.editingShelfIndex = null;
+        
+        document.getElementById('shelf-modal-title').textContent = 'Create New Shelf';
+        document.getElementById('shelf-name').value = '';
+        document.getElementById('save-shelf').textContent = 'Create Shelf';
+        document.getElementById('delete-shelf').classList.add('hidden');
+        
+        this.openModal('shelf-modal');
+        document.getElementById('shelf-name').focus();
+    }
+    
+    openEditShelfModal(shelfIndex) {
+        this.shelfModalMode = 'edit';
+        this.editingShelfIndex = shelfIndex;
+        
+        const shelf = this.shelves[shelfIndex];
+        
+        document.getElementById('shelf-modal-title').textContent = 'Rename Shelf';
+        document.getElementById('shelf-name').value = shelf.name;
+        document.getElementById('save-shelf').textContent = 'Update Shelf';
+        document.getElementById('delete-shelf').classList.remove('hidden');
+        
+        this.openModal('shelf-modal');
+        document.getElementById('shelf-name').focus();
+        document.getElementById('shelf-name').select();
+    }
+    
+    async handleShelfFormSubmit(e) {
+        e.preventDefault();
+        
+        const name = document.getElementById('shelf-name').value.trim();
+        
+        if (!name) {
+            this.showToast('Shelf name is required', 'error');
+            return;
+        }
+        
+        if (this.shelfModalMode === 'create') {
+            const newShelf = {
+                id: this.generateId(),
+                name: name,
+                categories: [],
+                favourites: [],
+                columnCount: 3,
+                showFavourites: true,
+                openLinksInNewTab: true,
+                createdAt: Date.now()
+            };
+            
+            this.shelves.push(newShelf);
+            await this.saveData();
+            this.renderShelfSelector();
+            this.renderDashboard();
+            this.closeModal('shelf-modal');
+            this.showToast('Shelf created successfully', 'success');
+        } else if (this.shelfModalMode === 'edit') {
+            if (this.editingShelfIndex !== null) {
+                this.shelves[this.editingShelfIndex].name = name;
+                await this.saveData();
+                this.renderShelfSelector();
+                this.renderDashboard();
+                this.closeModal('shelf-modal');
+                this.showToast('Shelf renamed successfully', 'success');
+            }
+        }
+    }
+    
+    deleteShelf(shelfIndex) {
+        const shelf = this.shelves[shelfIndex];
+        
+        if (this.shelves.length <= 1) {
+            this.showToast('Cannot delete the last shelf', 'error');
+            return;
+        }
+        
+        const categoryCount = shelf.categories.length;
+        const favouriteCount = shelf.favourites.length;
+        
+        let message = `Are you sure you want to delete the shelf "${shelf.name}"?`;
+        if (categoryCount > 0 || favouriteCount > 0) {
+            message += `\n\nThis will permanently delete ${categoryCount} categories and ${favouriteCount} favourites.`;
+        }
+        
+        this.showConfirmation(
+            'Delete Shelf',
+            message,
+            async () => {
+                // If deleting current shelf, switch to another shelf first
+                if (shelf.id === this.currentShelfId) {
+                    const remainingShelf = this.shelves.find(s => s.id !== shelf.id);
+                    if (remainingShelf) {
+                        this.currentShelfId = remainingShelf.id;
+                        this.loadCurrentShelf();
+                    }
+                }
+                
+                this.shelves.splice(shelfIndex, 1);
+                await this.saveData();
+                this.renderShelfSelector();
+                this.renderDashboard();
+                this.showToast('Shelf deleted successfully', 'success');
+            }
+        );
+    }
+    
+    handleDeleteShelfFromModal() {
+        if (this.editingShelfIndex !== null) {
+            this.deleteShelf(this.editingShelfIndex);
+            this.closeModal('shelf-modal');
+        }
+    }
+
+    // Show shelf options for moving categories
+    showMoveToShelfOptions(categoryIndex, buttonElement) {
+        const category = this.categories[categoryIndex];
+        if (!category) return;
+        
+        // Close category dropdown first
+        this.closeCategoryDropdowns();
+        
+        // Create dropdown menu
+        const dropdown = document.createElement('div');
+        dropdown.className = 'category-dropdown-menu show';
+        dropdown.style.position = 'absolute';
+        dropdown.style.zIndex = '99999';
+        
+        // Position dropdown relative to button
+        const rect = buttonElement.getBoundingClientRect();
+        dropdown.style.top = (rect.bottom + 5) + 'px';
+        dropdown.style.left = rect.left + 'px';
+        
+        // Add shelf options (exclude current shelf)
+        this.shelves.forEach((shelf, shelfIndex) => {
+            if (shelf.id === this.currentShelfId) return; // Skip current shelf
+            
+            const option = document.createElement('button');
+            option.className = 'dropdown-item';
+            option.textContent = `Move to "${shelf.name}"`;
+            option.addEventListener('click', () => {
+                this.moveCategoryToShelf(categoryIndex, shelf.id);
+                dropdown.remove();
+            });
+            dropdown.appendChild(option);
+        });
+        
+        // Add close handler
+        const closeDropdown = (e) => {
+            if (!dropdown.contains(e.target)) {
+                dropdown.remove();
+                document.removeEventListener('click', closeDropdown);
+            }
+        };
+        
+        document.body.appendChild(dropdown);
+        setTimeout(() => document.addEventListener('click', closeDropdown), 100);
+    }
+    
+    async moveCategoryToShelf(categoryIndex, targetShelfId) {
+        const category = this.categories[categoryIndex];
+        if (!category) return;
+        
+        const targetShelf = this.shelves.find(shelf => shelf.id === targetShelfId);
+        if (!targetShelf) return;
+        
+        // Save current shelf data before making changes
+        this.saveCurrentShelfData();
+        
+        // Remove category from current shelf
+        this.categories.splice(categoryIndex, 1);
+        
+        // Add category to target shelf
+        targetShelf.categories.push(category);
+        
+        // Save and re-render
+        await this.saveData();
+        this.renderDashboard();
+        
+        this.showToast(`Category "${category.name}" moved to "${targetShelf.name}"`, 'success');
     }
 
     renderEmptyState() {
@@ -438,6 +890,7 @@ class LinkShelfDashboard {
                         <div class="category-dropdown-menu" data-category-index="${categoryIndex}">
                             <button class="dropdown-item category-edit-btn" data-category-index="${categoryIndex}">Edit Category</button>
                             <button class="dropdown-item add-subcategory-btn" data-category-index="${categoryIndex}">Add Subcategory</button>
+                            ${this.shelves.length > 1 ? `<button class="dropdown-item category-move-to-shelf-btn" data-category-index="${categoryIndex}">Move to Shelf</button>` : ''}
                             <button class="dropdown-item category-delete-btn" data-category-index="${categoryIndex}">Delete Category</button>
                         </div>
                     </div>
@@ -486,7 +939,7 @@ class LinkShelfDashboard {
 
     renderSubcategory(subcategory, categoryIndex, subcategoryIndex) {
         const isCollapsed = subcategory.collapsed || false;
-        const caretIcon = isCollapsed ? '▶' : '▼';
+        const caretIcon = isCollapsed ? '<img src="icons/app_icons/down-white.png" alt="Expand" class="caret-icon caret-right">' : '<img src="icons/app_icons/down-white.png" alt="Collapse" class="caret-icon">';
         
         let subcategoryContent = '';
         if (!isCollapsed) {
@@ -2779,6 +3232,14 @@ class LinkShelfDashboard {
             });
         });
 
+        document.querySelectorAll('.category-move-to-shelf-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const categoryIndex = parseInt(e.target.dataset.categoryIndex);
+                this.showMoveToShelfOptions(categoryIndex, btn);
+            });
+        });
+
         // Add link plus buttons
         document.querySelectorAll('.add-link-plus-btn, .add-bookmark-plus-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -3426,27 +3887,32 @@ class LinkShelfDashboard {
     }
 
     exportBookmarks() {
+        // Export current shelf data
+        const currentShelf = this.getCurrentShelf();
         const data = {
+            shelfName: currentShelf.name,
             categories: this.categories,
             favourites: this.favourites,
             columnCount: this.columnCount,
             showFavourites: this.showFavourites,
             openLinksInNewTab: this.openLinksInNewTab,
             exportDate: new Date().toISOString(),
-            version: '1.0'
+            version: '2.0', // Updated version for shelf support
+            isShelfExport: true
         };
 
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `linkshelf-export-${new Date().toISOString().split('T')[0]}.json`;
+        const shelfName = currentShelf.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+        a.download = `linkshelf-${shelfName}-${new Date().toISOString().split('T')[0]}.json`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
         
-        this.showToast('Bookmarks exported successfully', 'success');
+        this.showToast(`Shelf "${currentShelf.name}" exported successfully`, 'success');
     }
 
     exportToNetscape() {
@@ -3587,15 +4053,23 @@ class LinkShelfDashboard {
             
             // Detect file format - HTML (Papaly/Netscape) vs JSON (LinkShelf)
             let importedData;
+            let isShelfExport = false;
+            let shelfName = null;
+            
             if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<HTML') || text.trim().startsWith('<html')) {
                 // HTML format - auto-detect Papaly vs standard Netscape
                 importedData = this.parseHtmlBookmarks(text);
+                shelfName = `Imported from ${file.name.replace(/\.[^/.]+$/, "")}`;
             } else {
                 // JSON format (LinkShelf export)
                 const data = JSON.parse(text);
                 if (!data.categories || !Array.isArray(data.categories)) {
                     throw new Error('Invalid export file format');
                 }
+                
+                isShelfExport = data.isShelfExport || data.version === '2.0';
+                shelfName = data.shelfName || `Imported from ${file.name.replace(/\.[^/.]+$/, "")}`;
+                
                 importedData = {
                     categories: data.categories,
                     favourites: data.favourites || [],
@@ -3605,18 +4079,30 @@ class LinkShelfDashboard {
                 };
             }
 
-            // Import the data
-            this.categories = importedData.categories;
-            this.favourites = importedData.favourites || [];
-            this.columnCount = importedData.columnCount || this.columnCount || 3;
-            this.showFavourites = importedData.showFavourites !== false;
-            this.openLinksInNewTab = importedData.openLinksInNewTab !== false;
+            // Create a new shelf for the imported data
+            const newShelf = {
+                id: this.generateId(),
+                name: shelfName,
+                categories: importedData.categories,
+                favourites: importedData.favourites,
+                columnCount: importedData.columnCount,
+                showFavourites: importedData.showFavourites,
+                openLinksInNewTab: importedData.openLinksInNewTab,
+                createdAt: Date.now()
+            };
+            
+            // Add the new shelf
+            this.shelves.push(newShelf);
+            
+            // Switch to the new shelf
+            this.currentShelfId = newShelf.id;
+            this.loadCurrentShelf();
             
             await this.saveData();
             this.renderDashboard();
             this.closeModal('settings-modal');
             
-            this.showToast(`Successfully imported ${importedData.categories.length} categories`, 'success');
+            this.showToast(`Successfully imported ${importedData.categories.length} categories as "${shelfName}"`, 'success');
             
             // Automatically fetch favicons for imported links
             setTimeout(() => {

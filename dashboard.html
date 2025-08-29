@@ -6,7 +6,7 @@
     <title>LinkShelf</title>
     <link rel="stylesheet" href="dashboard.css">
 </head>
-<body class="dashboard">
+<body class="dashboard loading">
     <!-- Header -->
     <header class="header">
         <div class="header-content">
@@ -25,7 +25,15 @@
             </div>
             <div class="header-actions">
                 <button id="create-category-btn" class="btn btn-primary">+ Create Category</button>
-                <button id="settings-btn" class="btn btn-secondary">⚙️ Settings</button>
+                <div class="shelf-selector">
+                    <button id="shelf-selector-btn" class="btn btn-secondary" title="Select Shelf">
+                        <span id="current-shelf-name">Main</span> <img src="icons/app_icons/down-white.png" alt="Dropdown" class="dropdown-icon">
+                    </button>
+                    <div id="shelf-selector-dropdown" class="shelf-selector-dropdown">
+                        <!-- Shelf options will be dynamically inserted here -->
+                    </div>
+                </div>
+                <button id="settings-btn" class="btn btn-secondary"><img src="icons/app_icons/settings-white.png" alt="Settings" class="btn-icon"> Settings</button>
             </div>
         </div>
     </header>
@@ -198,6 +206,30 @@
                     <button type="button" class="btn btn-secondary" id="confirmation-cancel">Cancel</button>
                     <button type="button" class="btn btn-danger" id="confirmation-confirm">Confirm</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit Shelf Modal -->
+    <div id="shelf-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="shelf-modal-title">Create New Shelf</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="shelf-form">
+                    <div class="form-group">
+                        <label for="shelf-name">Shelf Name</label>
+                        <input type="text" id="shelf-name" name="shelfName" placeholder="Enter shelf name" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancel-shelf">Cancel</button>
+                        <button type="button" class="btn btn-danger hidden" id="delete-shelf">Delete Shelf</button>
+                        <button type="submit" class="btn btn-primary" id="save-shelf">Create Shelf</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
