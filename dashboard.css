@@ -73,14 +73,15 @@ body.loading {
     background-color: #2A3642;
     border-bottom: 1px solid #3C4D5E;
     padding: 8px 16px 16px;
-    max-width: 1600px; /* Match categories container */
+    max-width: 1400px; /* Match categories container */
     margin: 0 auto; /* Center like categories container */
     position: sticky;
     top: 0;
     z-index: 1000;
-    transition: transform 0.3s ease;
+    transition: transform 0.3s ease, margin-left 0.3s ease;
     height: var(--header-height);
     border-radius: 6px;
+    padding-right: 16px;
 }
 
 .header-content {
@@ -90,14 +91,16 @@ body.loading {
     width: 100%;
     padding-left: 50px; /* Space for burger button */
     gap: 20px;
+    min-width: 0; /* Allow flex items to shrink below their content size */
+    overflow: hidden; /* Prevent content from escaping the header */
 }
 
 .header-left {
     display: flex;
     align-items: center;
     gap: 12px;
-    flex: 1;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: fit-content;
 }
 
 .logo {
@@ -153,7 +156,7 @@ body.sidebar-open .sidebar-toggle {
 
 /* Header Search */
 .header-search {
-    flex: 1;
+    flex: 1 1 auto;
     max-width: 400px;
     min-width: 200px;
     display: flex;
@@ -242,8 +245,8 @@ body.sidebar-open .sidebar-toggle {
 .header-actions {
     display: flex;
     gap: 8px;
-    flex: 1;
-    min-width: 0;
+    flex: 0 0 auto;
+    min-width: fit-content;
     justify-content: flex-end;
 }
 
@@ -665,11 +668,11 @@ body.sidebar-open .dashboard {
 }
 
 body.sidebar-open .header {
-    transform: translateX(140px); /* Half the sidebar width to account for centering */
+    margin-left: 280px; /* Match dashboard margin when sidebar is open */
 }
 
 body.sidebar-open .header-content {
-    padding-left: 50px; /* Just burger button space */
+    padding-left: 50px; /* Keep content in same position - just burger space */
 }
 
 /* Favourites Bar */
@@ -2429,10 +2432,152 @@ body.dragging-inbox .subcategory-body.drag-over::before {
     }
 }
 
-/* Tablet responsive adjustments for search */
-@media (max-width: 768px) and (min-width: 500px) {
+/* Better responsive header adjustments */
+@media (max-width: 1000px) {
     .header-search {
+        flex: 1;
         max-width: 300px;
+        min-width: 180px;
+    }
+    
+    .header-actions {
+        gap: 6px;
+        flex-shrink: 0;
+    }
+}
+
+@media (max-width: 800px) {
+    .header-search {
+        max-width: 250px;
+        min-width: 150px;
+    }
+    
+    .header-actions {
+        gap: 4px;
+    }
+    
+    #create-category-btn {
+        font-size: 0.85rem;
+        padding: 6px 12px;
+        white-space: nowrap;
+    }
+    
+    .shelf-selector button {
+        font-size: 0.85rem;
+        padding: 6px 10px;
+    }
+}
+
+@media (max-width: 650px) {
+    .header-search {
+        max-width: 200px;
+        min-width: 120px;
+    }
+    
+    #create-category-btn {
+        font-size: 0.8rem;
+        padding: 5px 10px;
+    }
+    
+    .shelf-selector button {
+        font-size: 0.8rem;
+        padding: 5px 8px;
+    }
+    
+    .header-actions {
+        gap: 3px;
+    }
+}
+
+@media (max-width: 550px) {
+    /* Hide shelf selector text, show only dropdown arrow */
+    .shelf-selector button {
+        min-width: 30px;
+        padding: 5px 8px;
+    }
+    
+    #current-shelf-name {
+        display: none;
+    }
+    
+    .header-search {
+        max-width: 150px;
+        min-width: 100px;
+    }
+    
+    #create-category-btn {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+    }
+}
+
+@media (max-width: 450px) {
+    .header-content {
+        gap: 8px;
+    }
+    
+    .header-search {
+        min-width: 80px;
+        max-width: 120px;
+    }
+    
+    /* Show only "+" for create category button */
+    #create-category-btn {
+        font-size: 0; /* Hide original text */
+        padding: 0;
+        min-width: 32px;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+    }
+    
+    #create-category-btn::before {
+        content: '+';
+        font-size: 1.4rem;
+        font-weight: bold;
+        color: inherit;
+        position: absolute;
+    }
+    
+    /* Show only dropdown arrow for shelf selector */
+    .shelf-selector button {
+        min-width: 32px;
+        width: 32px;
+        height: 32px;
+        padding: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* Hide shelf name, keep only dropdown icon */
+    #current-shelf-name {
+        display: none;
+    }
+    
+    .shelf-selector .dropdown-icon {
+        margin: 0;
+        width: 16px;
+        height: 16px;
+    }
+    
+    /* Settings button already shows only gear icon, just adjust size */
+    #settings-btn {
+        padding: 6px;
+        min-width: 32px;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    #settings-btn .btn-icon {
+        width: 16px;
+        height: 16px;
     }
 }
     
@@ -2497,11 +2642,11 @@ body.dragging-inbox .subcategory-body.drag-over::before {
     }
     
     body.sidebar-open .header {
-        transform: translateX(115px); /* Half the mobile sidebar width to account for centering */
+        margin-left: 230px; /* Match mobile dashboard margin when sidebar is open */
     }
-    
+
     body.sidebar-open .header-content {
-        padding-left: 45px; /* Just mobile burger button space */
+        padding-left: 45px; /* Keep content in same position - just mobile burger space */
     }
     
     /* Stack header items on very small screens */
@@ -2532,11 +2677,11 @@ body.dragging-inbox .subcategory-body.drag-over::before {
         
         /* Very small screen header positioning when sidebar is open */
         body.sidebar-open .header {
-            transform: translateX(115px); /* Half the sidebar width to account for centering */
+            margin-left: 230px; /* Match very small dashboard margin when sidebar is open */
         }
-        
+
         body.sidebar-open .header-content {
-            padding-left: 28px; /* Just very small burger button space */
+            padding-left: 28px; /* Keep content in same position - just very small burger space */
         }
     }
 
