@@ -93,7 +93,7 @@ body.loading {
     padding-left: 50px; /* Space for burger button */
     gap: 20px;
     min-width: 0; /* Allow flex items to shrink below their content size */
-    overflow: hidden; /* Prevent content from escaping the header */
+    overflow: visible; /* Allow dropdowns to show outside header */
 }
 
 .header-left {
@@ -678,10 +678,14 @@ body.sidebar-open .sidebar-toggle {
  */
 
 /* SOLUTION 1: Unified Container Positioning (Current) */
+/* Add transition to dashboard for smooth sidebar animation */
+.dashboard {
+    transition: margin-left 0.3s ease;
+}
+
 /* Push main content and header containers when sidebar is open */
 body.sidebar-open .dashboard {
     margin-left: 280px; /* Sidebar width */
-    transition: margin-left 0.3s ease;
 }
 
 /* Header now inside dashboard - inherits positioning automatically like favourites bar */
