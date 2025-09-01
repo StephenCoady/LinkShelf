@@ -73,15 +73,16 @@ body.loading {
     background-color: #2A3642;
     border-bottom: 1px solid #3C4D5E;
     padding: 8px 16px 16px;
-    max-width: 1400px; /* Match categories container */
-    margin: 0 auto; /* Center like categories container */
+    max-width: 1400px; /* Match categories container and favourites bar */
+    margin: 0px auto 16px auto; /* Reduced top margin from 16px to 8px */
     position: sticky;
-    top: 0;
+    top: 8px; /* Reduced to match dashboard top padding */
     z-index: 1000;
-    transition: transform 0.3s ease, margin-left 0.3s ease;
+    transition: opacity 0.2s ease; /* Same transition as favourites bar */
     height: var(--header-height);
     border-radius: 6px;
     padding-right: 16px;
+    width: calc(100% - 32px); /* Same width calculation as favourites bar */
 }
 
 .header-content {
@@ -119,7 +120,7 @@ body.loading {
 .sidebar-toggle {
     position: fixed;
     left: 0; /* Always at screen edge */
-    top: 12px; /* Better align with header content */
+    top: 14px; /* Better align with header content */
     background: #2A3642;
     border: 1px solid #4A5F73;
     color: #C0C9D1;
@@ -661,19 +662,73 @@ body.sidebar-open .sidebar-toggle {
     line-height: 1.4;
 }
 
-/* Push main content and header when sidebar is open */
+/* 
+ * SIDEBAR LAYOUT SOLUTIONS
+ * 
+ * Currently using: SOLUTION 1 - Individual Element Positioning
+ * This pushes each element (header, favourites, categories) individually when sidebar opens.
+ * Maintains different max-widths but ensures consistent behavior.
+ * 
+ * Alternative: SOLUTION 2 - Unified Container Approach
+ * To implement unified layout (all elements same width, stacked):
+ * 1. Remove individual sidebar positioning rules below
+ * 2. Wrap header, favourites-bar, and categories-container in a common parent
+ * 3. Apply sidebar positioning to the parent container only
+ * 4. Set all elements to have max-width: 1400px (already done for favourites-bar)
+ */
+
+/* SOLUTION 1: Unified Container Positioning (Current) */
+/* Push main content and header containers when sidebar is open */
 body.sidebar-open .dashboard {
     margin-left: 280px; /* Sidebar width */
     transition: margin-left 0.3s ease;
 }
 
-body.sidebar-open .header {
-    margin-left: 280px; /* Match dashboard margin when sidebar is open */
-}
-
+/* Header now inside dashboard - inherits positioning automatically like favourites bar */
 body.sidebar-open .header-content {
     padding-left: 50px; /* Keep content in same position - just burger space */
 }
+
+/* 
+ * Note: header, favourites-bar, and categories-container are ALL inside .dashboard,
+ * so they automatically get positioned by the dashboard's margin-left.
+ * They all remain centered within their container using margin: 16px auto.
+ * No individual positioning needed - they all behave identically!
+ */
+
+/*
+ * SOLUTION 2: Unified Container Approach (Alternative)
+ * To implement this approach, uncomment the CSS below and comment out Solution 1 above:
+ *
+ * Create a main container wrapper in HTML around header, favourites-bar, and categories-container:
+ * <div class="main-content-wrapper">
+ *   <header class="header">...</header>
+ *   <main class="dashboard">
+ *     <div class="favourites-bar">...</div>
+ *     <div class="categories-container">...</div>
+ *   </main>
+ * </div>
+ * 
+ * Then use this CSS:
+ * 
+ * .main-content-wrapper {
+ *     transition: margin-left 0.3s ease;
+ * }
+ * 
+ * body.sidebar-open .main-content-wrapper {
+ *     margin-left: 280px;
+ * }
+ * 
+ * body.sidebar-open .header-content {
+ *     padding-left: 50px;
+ * }
+ * 
+ * .header, .favourites-bar, .categories-container {
+ *     max-width: 1400px;
+ *     margin-left: auto;
+ *     margin-right: auto;
+ * }
+ */
 
 /* Favourites Bar */
 .favourites-bar {
@@ -683,7 +738,7 @@ body.sidebar-open .header-content {
     margin: 16px auto;
     padding: 12px;
     transition: opacity 0.2s ease;
-    max-width: 1120px;
+    max-width: 1400px; /* Match header and categories container for unified layout */
     width: calc(100% - 32px);
 }
 
@@ -1166,7 +1221,7 @@ body.dragging-favourite .favourite-item.drag-over-after::after {
 
 /* Dashboard */
 .dashboard {
-    padding: 16px;
+    padding: 8px 16px 16px 16px; /* Reduced top padding from 16px to 8px */
     min-height: calc(100vh - 48px);
 }
 
@@ -2641,13 +2696,15 @@ body.dragging-inbox .subcategory-body.drag-over::before {
         margin-left: 230px;
     }
     
-    body.sidebar-open .header {
-        margin-left: 230px; /* Match mobile dashboard margin when sidebar is open */
-    }
-
+    /* Header inside dashboard - inherits positioning automatically */
     body.sidebar-open .header-content {
         padding-left: 45px; /* Keep content in same position - just mobile burger space */
     }
+    
+    /* 
+     * Mobile: favourites-bar and categories-container automatically positioned
+     * by dashboard container's margin-left. They remain centered.
+     */
     
     /* Stack header items on very small screens */
     @media (max-width: 400px) {
@@ -2675,14 +2732,15 @@ body.dragging-inbox .subcategory-body.drag-over::before {
             font-size: 12px;
         }
         
-        /* Very small screen header positioning when sidebar is open */
-        body.sidebar-open .header {
-            margin-left: 230px; /* Match very small dashboard margin when sidebar is open */
-        }
-
+        /* Header inside dashboard - inherits positioning automatically */
         body.sidebar-open .header-content {
             padding-left: 28px; /* Keep content in same position - just very small burger space */
         }
+        
+        /* 
+         * Very small screens: favourites-bar and categories-container automatically positioned
+         * by dashboard container's margin-left. They remain centered.
+         */
     }
 
 /* New Item Flash Animation */

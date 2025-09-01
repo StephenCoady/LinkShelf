@@ -7,37 +7,6 @@
     <link rel="stylesheet" href="dashboard.css">
 </head>
 <body class="dashboard loading">
-    <!-- Header -->
-    <header class="header">
-        <div class="header-content">
-            <div class="header-left">
-                <h1 class="logo">
-                    <img src="icons/logo-large-white.png" alt="LinkShelf" class="logo-image">
-                </h1>
-            </div>
-            <div class="header-search">
-                <div class="search-container">
-                    <input type="text" id="global-search" class="search-input" placeholder="Search bookmarks... (Press / to focus)" autocomplete="off">
-                    <button id="search-clear" class="search-clear hidden" title="Clear search">
-                        ✕
-                    </button>
-                </div>
-            </div>
-            <div class="header-actions">
-                <button id="create-category-btn" class="btn btn-primary">+ Create Category</button>
-                <div class="shelf-selector">
-                    <button id="shelf-selector-btn" class="btn btn-secondary" title="Select Shelf">
-                        <span id="current-shelf-name">Main</span> <img src="icons/app_icons/down-white.png" alt="Dropdown" class="dropdown-icon">
-                    </button>
-                    <div id="shelf-selector-dropdown" class="shelf-selector-dropdown">
-                        <!-- Shelf options will be dynamically inserted here -->
-                    </div>
-                </div>
-                <button id="settings-btn" class="btn btn-secondary"><img src="icons/app_icons/settings-white.png" alt="Settings" class="btn-icon"></button>
-            </div>
-        </div>
-    </header>
-
     <!-- Sidebar Toggle Button (always visible) -->
     <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle Inbox">
         ☰
@@ -58,6 +27,37 @@
 
     <!-- Main Dashboard -->
     <main class="dashboard">
+        <!-- Header (moved inside dashboard for consistent behavior) -->
+        <header class="header">
+            <div class="header-content">
+                <div class="header-left">
+                    <h1 class="logo">
+                        <img src="icons/logo-large-white.png" alt="LinkShelf" class="logo-image">
+                    </h1>
+                </div>
+                <div class="header-search">
+                    <div class="search-container">
+                        <input type="text" id="global-search" class="search-input" placeholder="Search bookmarks... (Press / to focus)" autocomplete="off">
+                        <button id="search-clear" class="search-clear hidden" title="Clear search">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button id="create-category-btn" class="btn btn-primary">+ Create Category</button>
+                    <div class="shelf-selector">
+                        <button id="shelf-selector-btn" class="btn btn-secondary" title="Select Shelf">
+                            <span id="current-shelf-name">Main</span> <img src="icons/app_icons/down-white.png" alt="Dropdown" class="dropdown-icon">
+                        </button>
+                        <div id="shelf-selector-dropdown" class="shelf-selector-dropdown">
+                            <!-- Shelf options will be dynamically inserted here -->
+                        </div>
+                    </div>
+                    <button id="settings-btn" class="btn btn-secondary"><img src="icons/app_icons/settings-white.png" alt="Settings" class="btn-icon"></button>
+                </div>
+            </div>
+        </header>
+
         <!-- Favourites Bar -->
         <div id="favourites-bar" class="favourites-bar hidden">
             <!-- Favourites content will be dynamically inserted here -->
